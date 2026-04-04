@@ -62,7 +62,7 @@ The hard parts of multiplexer engineering that tmux has solved over decades (PTY
 
 - Native agent-aware session management without translation overhead
 - Direct integration with MOTOKO for per-pane security
-- Container-backed panes as a first-class concept
+- Configurable per-pane isolation (Level 0-3) as a first-class concept (ADR-009)
 - Typed, structured interfaces between Navi and other quanta
 - Full control over session serialization and persistence
 - No external dependency on tmux being installed

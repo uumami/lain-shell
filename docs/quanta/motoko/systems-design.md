@@ -10,9 +10,10 @@
 |---|---|---|
 | Tier 1 blocking | seccomp-BPF via `libseccomp` Rust bindings | Applied at agent process spawn. Immutable, kernel-enforced. |
 | Tier 1 namespace isolation | `nix` crate for mount/network/PID namespaces | Direct syscall wrappers. |
-| Tier 1 container isolation | Rootless Podman (full), direct namespaces (lightweight) | Podman for full OCI containers. Raw namespaces for lighter tiers. |
+| Tier 1 isolation | Four levels (ADR-009): naked, sandboxed (namespace+seccomp), contained (Podman), air-gapped | Level 1 (sandboxed) is default. Level 2+ uses Podman. |
 | Tier 1 pattern matching | `aho-corasick` crate | Compiled multi-pattern. All patterns matched simultaneously. Microsecond latency. |
-| Tier 1 network policy | Podman network policy / iptables via nft | Forbidden packets dropped before leaving the pod. |
+| Tier 1 network policy | iptables via nft (Level 1) / Podman network policy (Level 2+) | Forbidden packets dropped before leaving the namespace/container. |
+| Host proxy monitoring | Custom audit stream | Every proxied command logged, allowlist enforced, compose files statically analyzed. |
 | Tier 2 analysis | Custom | Behavioral baselines specific to lain-shell sessions. |
 | Tier 3 reasoning | Model API call (pluggable) | No custom inference. Isolated pod, summarized input. |
 | Audit log | Custom append-only JSONL + hash chain | If query complexity grows: add `rusqlite` index. |

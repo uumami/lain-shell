@@ -67,9 +67,11 @@ Rules are:
 
 ## What MOTOKO Owns
 
+- Security profile generation per isolation level (ADR-009)
 - seccomp-BPF profile management and application
 - Network policy enforcement
 - Mount namespace / filesystem restriction
+- Host proxy allowlist enforcement and audit
 - PTY output pattern matching (compiled, Aho-Corasick)
 - Behavioral baseline tracking
 - Output entropy analysis

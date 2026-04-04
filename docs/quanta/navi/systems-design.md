@@ -10,7 +10,7 @@ Navi is custom-built (ADR-001). No tmux dependency. No Zellij dependency.
 
 | Component | Choice | Notes |
 |---|---|---|
-| PTY creation | Via Core (`portable-pty`) | Navi requests PTYs from Core, does not manage them directly |
+| PTY creation | Via Core (`portable-pty`) | Navi requests PTYs from Core, does not manage them directly. PTYs may be inside isolation. |
 | Session persistence | Custom TOML serialization | Typed sessions → TOML, stored in state directory |
 | Attach/detach | Unix domain socket | Server in Navi process, clients connect to reattach |
 | Layout data structure | Binary tree | tmux-validated approach. Each node is a split or a leaf (pane). |

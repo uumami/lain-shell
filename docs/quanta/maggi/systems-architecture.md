@@ -128,8 +128,9 @@ Tool call from model: { "name": "create_pane", "params": { "session": "work", ..
 ```
 
 Tools are grouped by quantum:
-- **Core tools**: `read_config`, `write_config`, `query_blocks`, `get_schema`
+- **Core tools**: `read_config`, `write_config`, `query_blocks`, `get_schema`, `sync_config`
 - **Navi tools**: `create_session`, `create_tab`, `split_pane`, `list_sessions`, `get_pane_output`
+- **Isolation tools**: `get_isolation_level`, `switch_isolation_level`, `list_proxy_commands`
 - **MOTOKO tools**: `get_status`, `get_session_security`, `verify_audit` (all read-only)
 - **MAGGI internal**: `search_knowledge`, `query_session`, `save_memory`
 

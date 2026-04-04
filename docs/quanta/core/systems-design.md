@@ -18,6 +18,8 @@
 | Config validation | JSON Schema (published via `lain schema`) | — |
 | Advanced config | Lua via `mlua` (optional layer, not default) | — |
 | Plugin sandbox | `wasmtime` (WASM) | — |
+| Isolation management | `nix` crate (namespaces, seccomp), rootless Podman (containers) | ADR-009 |
+| Host proxy | Custom Unix socket daemon + shim binaries | ADR-009 |
 | Memory allocator | System allocator initially; benchmark `jemalloc` under real load | — |
 
 ---

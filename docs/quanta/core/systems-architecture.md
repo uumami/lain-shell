@@ -12,7 +12,7 @@
 │                                                      │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
 │  │   PTY    │  │ Renderer │  │  Config  │          │
-│  │ Manager  │  │ Pipeline │  │  Engine  │          │
+│  │  Manager │  │ Pipeline │  │  Engine  │          │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘          │
 │       │             │              │                 │
 │  ┌────┴─────┐  ┌────┴─────┐  ┌────┴─────┐          │
@@ -21,8 +21,8 @@
 │  │ + Block  │  └──────────┘  └──────────┘          │
 │  │  Model   │                                       │
 │  └──────────┘  ┌──────────┐  ┌──────────┐          │
-│                │   Pod    │  │ Command  │          │
-│  ┌──────────┐  │ Manager  │  │  Router  │          │
+│                │Isolation │  │ Command  │          │
+│  ┌──────────┐  │  Manager │  │  Router  │          │
 │  │ Storage  │  └──────────┘  └──────────┘          │
 │  └──────────┘                                       │
 │                ┌──────────┐                          │
@@ -34,7 +34,7 @@
 
 ### PTY Manager
 
-Creates, destroys, and manages PTY instances. Uses `portable-pty`. PTYs are created on behalf of Navi (which owns the session/tab/pane structure). Each PTY may run inside a pod (container/namespace) created by the Pod Manager.
+Creates, destroys, and manages PTY instances. Uses `portable-pty`. PTYs are created on behalf of Navi (which owns the session/tab/pane structure). Each PTY may run inside an isolation environment (namespace or container) created by the Isolation Manager.
 
 ### VTE Parser + Block Model
 
@@ -52,9 +52,11 @@ Manages `.lain/` directory and user-global config. Parses TOML via `serde`. Vali
 
 Visual customization: colors, fonts, image backgrounds, watermarks, transparency. Themes are TOML. Hot-reloadable.
 
-### Pod Manager
+### Isolation Manager
 
-Creates and manages containers/namespaces for agent panes. Interfaces with rootless Podman (full isolation) or direct Linux namespaces (lightweight). When creating a pod, queries MOTOKO for the appropriate seccomp profile and network policy, then applies them.
+Creates and manages agent isolation at four configurable levels (ADR-009). Handles everything from naked execution (Level 0) to air-gapped containers (Level 3). Interfaces with Linux namespaces (Level 1), rootless Podman (Level 2-3), or nothing (Level 0). Queries MOTOKO for the appropriate seccomp profile and network policy, then applies them. Spawns host proxy processes alongside isolated agents for transparent Docker/GPU/tool access.
+
+Also manages the host proxy lifecycle — one proxy per isolated agent pane, monitored by MOTOKO, allowlisted per `.lain/permissions.toml` (read from the safe mirror, not the repo copy — see ADR-010).
 
 ### Command Router
 
@@ -89,23 +91,26 @@ trait CoreRenderApi {
     async fn free_surface(&self, handle: SurfaceHandle) -> Result<()>;
 }
 
-trait CorePodApi {
-    async fn create_pod(&self, config: PodConfig) -> Result<PodHandle>;
-    async fn destroy_pod(&self, handle: PodHandle) -> Result<()>;
-    async fn pause_pod(&self, handle: PodHandle) -> Result<()>;
-    async fn resume_pod(&self, handle: PodHandle) -> Result<()>;
+trait CoreIsolationApi {
+    async fn create_isolation(&self, config: IsolationConfig) -> Result<IsolationHandle>;
+    async fn destroy_isolation(&self, handle: IsolationHandle) -> Result<()>;
+    async fn pause_isolation(&self, handle: IsolationHandle) -> Result<()>;
+    async fn resume_isolation(&self, handle: IsolationHandle) -> Result<()>;
+    async fn get_level(&self, handle: IsolationHandle) -> Result<IsolationLevel>;
+    async fn switch_level(&self, handle: IsolationHandle, new_level: IsolationLevel) -> Result<IsolationHandle>;
 }
 ```
 
 ### To MOTOKO
 
 - **Dedicated channel**: PTY output byte stream (structurally isolated Unix socket)
-- **Event bus**: command block events, config change events, pod lifecycle events
+- **Event bus**: command block events, config change events, isolation lifecycle events
 
 ```rust
 trait CoreMotokoApi {
     fn subscribe_pty_stream(&self, handle: PtyHandle) -> PtyByteStream;
     async fn get_seccomp_profile(&self, agent_type: AgentType) -> Result<SeccompProfile>;
+    async fn get_host_proxy_log(&self, handle: IsolationHandle) -> Result<Vec<ProxiedCommand>>;
 }
 ```
 
@@ -153,8 +158,10 @@ PTY output (from agent/shell process)
     ├──▶ Renderer → GPU pipeline → pixels on screen
     └──▶ Dedicated channel → MOTOKO (pattern matching)
 
-Config change (user or MAGGI writes .lain/ file)
+Config change (user runs `lain config sync`)
     │
+    ├──▶ Diff shown, user confirms
+    ├──▶ Safe copy updated
     ├──▶ Config engine validates
     ├──▶ Event bus: ConfigChanged event
     └──▶ MOTOKO recompiles affected rules

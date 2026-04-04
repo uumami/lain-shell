@@ -94,6 +94,15 @@ This channel is:
 - Not affected by bus congestion
 - Mandatory (cannot be disabled by any profile)
 
+### Host proxy audit stream (from Core)
+
+Every host proxy operation is reported to MOTOKO:
+- Which agent requested the command
+- What command was proxied (docker compose up, nvidia-smi, etc.)
+- Path translations applied
+- Exit code and timing
+- For `docker compose`: compose file contents are statically analyzed before execution
+
 ### Event bus subscription
 
 MOTOKO subscribes to:
@@ -101,13 +110,14 @@ MOTOKO subscribes to:
 - Agent lifecycle events (from Navi)
 - Command block events (from Core)
 - Config change events (from Core)
-- Pod lifecycle events (from Core)
+- Isolation lifecycle events (from Core)
+- Host proxy events (from Core)
 
 These are profile-filtered but mandatory events bypass the filter.
 
 ### Policy files
 
-MOTOKO reads `.lain/policies.toml` and `.lain/permissions.toml`. It compiles rules at startup and recompiles when config change events arrive.
+MOTOKO reads `policies.toml` and `permissions.toml` from the **safe mirror** (`~/.local/state/lain-shell/workspaces/<project-hash>/`), NOT from the repo's `.lain/` directory. See ADR-010. It compiles rules at startup and recompiles when config change events arrive (triggered by `lain config sync`).
 
 MOTOKO **never writes** policy files. Separation of powers (see `systems-architecture.md`).
 
@@ -118,7 +128,7 @@ MOTOKO **never writes** policy files. Separation of powers (see `systems-archite
 ```rust
 #[async_trait]
 trait MotokoApi: Send + Sync {
-    // Queried by Core's Pod Manager when creating agent pods
+    // Queried by Core's Isolation Manager when creating agent isolation
     async fn get_seccomp_profile(&self, agent_type: AgentType, workspace: WorkspacePath) -> Result<SeccompProfile>;
     async fn get_network_policy(&self, agent_type: AgentType, workspace: WorkspacePath) -> Result<NetworkPolicy>;
 
@@ -133,11 +143,24 @@ trait MotokoApi: Send + Sync {
 }
 ```
 
+### MOTOKO adapts to isolation levels
+
+MOTOKO adjusts its monitoring based on the agent's isolation level (ADR-009):
+
+| Level | MOTOKO capabilities |
+|---|---|
+| Level 0 (naked) | PTY scanning only (Tier 1b). No seccomp visibility. |
+| Level 1 (sandboxed) | Tier 1a (seccomp) + Tier 1b (PTY) + host proxy audit |
+| Level 2 (contained) | Full Tier 1 + host proxy audit + container events |
+| Level 3 (air-gapped) | Full Tier 1 + network violation alerts |
+
+MOTOKO also monitors host proxy operations — every proxied command (docker, nvidia-smi, kubectl, etc.) is audited. A proxied `docker compose up` triggers static analysis of the compose file before execution.
+
 ### MOTOKO calls into Navi (rare, CRITICAL only)
 
 ```rust
 // MOTOKO holds Arc<dyn NaviApi> and calls:
-navi.pause_pane_agent(pane_id)   // pause the agent pod
+navi.pause_pane_agent(pane_id)   // pause the agent's isolation
 navi.pause_session(session_id)    // pause entire session
 navi.kill_session(session_id)     // kill entire session (extreme)
 ```
@@ -150,6 +173,8 @@ Event::SecurityBlock { session, pane, detail }     // Tier 1 block
 Event::Anomaly { session, pane, analysis }          // Tier 2 ANOMALY
 Event::Critical { session, pane, analysis, action } // Tier 2 CRITICAL
 Event::PostmortemComplete { session, report }        // Tier 3 result
+Event::HostProxyBlock { session, pane, command }    // host proxy denied command
+Event::IsolationLevelChange { session, pane, old_level, new_level } // level switch audit
 ```
 
 MAGGI subscribes to these events and translates them to plain language for the user.

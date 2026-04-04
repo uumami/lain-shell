@@ -27,7 +27,7 @@
 
 7. **Theme engine.** How do themes compose? How do image backgrounds work? What format?
 
-8. **Pod manager details.** Pod manager is defined as a Core component in `systems-architecture.md`. But: how does it interact with Podman? What's the container creation API? How are seccomp profiles passed?
+8. ~~**Pod manager details.**~~ ✓ Resolved. Pod Manager renamed to Isolation Manager. Four isolation levels defined (ADR-009). Host proxy pattern for Docker/GPU access. See `systems-architecture.md` and `quanta/core/systems-architecture.md`.
 
 ---
 
@@ -39,7 +39,7 @@
 
 11. **Keybinding system.** Multiple keymaps decided (native, tmux-compatible, Zellij-style). But: how is the dispatch system implemented? How are custom keymaps validated?
 
-12. ~~**Container-backed panes.**~~ ✓ Resolved in `systems-architecture.md`. Navi requests pods from Core's pod manager. MOTOKO provides security context. Sequence diagram in lifecycle section.
+12. ~~**Container-backed panes.**~~ ✓ Resolved. Generalized to isolation levels (ADR-009). Navi requests isolation from Core's Isolation Manager. Level 0 (naked), Level 1 (sandboxed, default), Level 2 (contained), Level 3 (air-gapped). Host proxy for transparent Docker/GPU access. See `systems-architecture.md`.
 
 ---
 
@@ -84,3 +84,19 @@
 25. **Plugin registry governance.** Community-operated, but how? Who signs? Trust levels?
 
 26. **Shared team sessions.** Architecture supports it. UX and permission model need design. See `future.md`.
+
+---
+
+## Isolation and Security
+
+27. **Host proxy shim curation.** Which commands ship with shims by default (docker, podman, nvidia-smi, kubectl)? How do users add custom shims? Is it a config list or do they create shim binaries?
+
+28. **Host proxy path translation.** When translating paths from sandbox to host (e.g., for Docker volume mounts in compose files), how deep does the rewriting go? Does it rewrite inside YAML files, or only command-line arguments?
+
+29. **Nested container monitoring.** When an agent launches `docker compose` via host proxy, MOTOKO can statically analyze the compose file and monitor host-level network/resource usage. But it cannot scan PTY output inside composed containers. Is this acceptable, or does MOTOKO need deeper visibility here?
+
+30. **Agent checkpoint/restore for level switching.** Seamless isolation level switching requires checkpointing agent state (conversation, working directory, environment) and restoring in a new isolation environment. Which agents support this? What's the fallback for agents that don't? See `future.md`.
+
+31. **Level 1 mount namespace construction.** Exactly what directories are visible at Level 1? How is the mount view constructed? Which dotfiles are mounted by default vs. configured?
+
+32. **Config sync automation.** Can `lain config sync` be automated via git hooks (post-merge, post-checkout)? Should MAGGI auto-detect when repo `.lain/` differs from active config?

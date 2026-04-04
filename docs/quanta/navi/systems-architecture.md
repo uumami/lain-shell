@@ -69,7 +69,7 @@ Tracks all panes and their types:
 - **Agent pane**: PTY inside a container/namespace, running an agent
 - **Read-only pane**: output-only (log viewer, status monitor)
 
-Each pane has metadata: pane ID, type, PTY handle, optional pod handle, working directory, agent info.
+Each pane has metadata: pane ID, type, PTY handle, optional isolation handle, working directory, agent info.
 
 ### Keybinding Dispatcher
 
@@ -116,7 +116,7 @@ struct Pane {
     id: PaneId,
     pane_type: PaneType,         // Shell, Agent, ReadOnly
     pty_handle: PtyHandle,       // from Core
-    pod_handle: Option<PodHandle>, // from Core's Pod Manager
+    isolation_handle: Option<IsolationHandle>, // from Core's Isolation Manager
     working_dir: PathBuf,
     agent_info: Option<AgentInfo>,
     created_at: Timestamp,
@@ -174,14 +174,14 @@ trait NaviApi: Send + Sync {
 | Kill pane | `close_pane(pane_id)` | PTY dies, container destroyed if agent | Session, tab, other panes |
 | Kill tab | `close_tab(session, tab)` | All panes die | Session, other tabs |
 | Kill session | `destroy_session(session)` | All tabs and panes die | Other sessions |
-| Kill agent pod | `core.pod_manager.destroy_pod(handle)` | Container destroyed, pane stays | Session, tab, pane (shows exit) |
-| Pause agent | `pause_pane_agent(pane_id)` → `core.pod_manager.pause_pod(handle)` | Agent frozen, pane shows "paused" | Everything stays, resumable |
+| Kill agent isolation | `core.isolation_manager.destroy_isolation(handle)` | Namespace/container destroyed, pane stays | Session, tab, pane (shows exit) |
+| Pause agent | `pause_pane_agent(pane_id)` → `core.isolation_manager.pause_isolation(handle)` | Agent frozen, pane shows "paused" | Everything stays, resumable |
 
 ---
 
 ## Integration with Other Quanta
 
-- **Core**: Navi calls Core's PTY, Render, and Pod APIs. Core streams PTY output and exit events back.
+- **Core**: Navi calls Core's PTY, Render, and Isolation APIs. Core streams PTY output and exit events back.
 - **MOTOKO**: Navi emits session/agent lifecycle events to the bus. MOTOKO calls `pause_session`/`kill_session` on CRITICAL events.
 - **MAGGI**: MAGGI calls Navi's API for session/tab/pane management. MAGGI queries session state for context.
 - **THE WIRED**: External requests for session management route through the command router to Navi's API.

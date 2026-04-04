@@ -22,7 +22,7 @@ All quanta are designed as **separate processes** communicating over IPC. During
 │  ┌────────────────────────────────────────────────────┐ │
 │  │ Core                                               │ │
 │  │ PTY Manager · Renderer · Config · CLI              │ │
-│  │ Command Router · Pod Manager · Event Bus           │ │
+│  │ Command Router · Isolation Manager · Event Bus      │ │
 │  └────────────────────────────────────────────────────┘ │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
@@ -41,8 +41,9 @@ All quanta are designed as **separate processes** communicating over IPC. During
 │  WIRED                                  SEPARATE PROCESS│
 │  MCP server · gRPC server · Unix socket listener        │
 │                                                         │
-│  Agent Pods                             ONE EACH        │
-│  Each agent pane runs in its own container/namespace    │
+│  Agent Isolation                        PER PANE        │
+│  Level 0-3: naked/sandboxed/contained/air-gapped       │
+│  Host proxy alongside for Docker/GPU/tool access        │
 │                                                         │
 │  MOTOKO Tier 3                          ON DEMAND       │
 │  Isolated reasoning pod, spawned per analysis           │
@@ -122,10 +123,12 @@ Callers cannot forget to emit events because they don't do it. The quantum itsel
 FROM          TO            PATTERN              WHAT
 ─────         ──            ───────              ────
 Navi      →   Core          direct call          create/resize/destroy PTY
+Navi      →   Core          direct call          create/destroy isolation (via Isolation Manager)
 Navi      →   Core          direct call          allocate render surface
 Core      →   Navi          event bus            PTY exit events
 Core      →   MOTOKO        dedicated channel    PTY output bytes (scanning)
-Core      →   MOTOKO        event bus            command block events, config changes
+Core      →   MOTOKO        dedicated channel    host proxy audit stream
+Core      →   MOTOKO        event bus            command block events, config changes, isolation events
 Navi      →   MOTOKO        event bus            session/agent lifecycle events
 MOTOKO    →   Navi          direct call          pause/kill session (CRITICAL, rare)
 MAGGI     →   Core          direct call          config read/write, CLI commands
@@ -233,13 +236,58 @@ WIRED translates external protocols to `LainCommand`. The router dispatches. No 
 
 ---
 
-## Pod Manager
+## Isolation Manager
 
-A component within Core that manages containers and namespaces for agent panes. Navi requests pods; Core's pod manager creates them; MOTOKO provides the security context.
+A component within Core that manages agent isolation at four configurable levels. Previously called "Pod Manager" — renamed because isolation is a spectrum, not just containers. See ADR-009.
+
+### Isolation Levels
+
+| Level | Name | Mechanism | Use case |
+|---|---|---|---|
+| 0 | Naked | No isolation. MOTOKO PTY scanning only. | Trusted agents, GPU workloads, explicit opt-out |
+| 1 | Sandboxed | seccomp-BPF + PID/mount namespace. Host tools visible read-only. | **Default.** Daily coding, most users. |
+| 2 | Contained | Rootless Podman container. Own filesystem. | Untrusted agents, sensitive repos, compliance |
+| 3 | Air-gapped | Level 2 + all network dropped. | Maximum restriction, sensitive environments |
+
+Level 1 is the default because it provides strong security (blocks credential theft, lateral movement, privilege escalation) with near-zero configuration effort. Agent-generated Dockerfiles make Level 2 a ~5 minute setup.
+
+### Host Proxy
+
+For Levels 1-3, a host proxy process runs alongside the sandbox/container:
 
 ```
-Agent pane creation sequence:
+Agent (inside sandbox)              Host Proxy (on host)
+┌──────────────────────┐           ┌──────────────────────┐
+│  $ docker compose up │           │  Receives command     │
+│  → "docker" is a shim│           │  Checks allowlist     │
+│  → forwards to proxy │──socket──▶│  Translates paths     │
+│  → receives output   │◀──socket──│  Executes on host     │
+│  → prints normally   │           │  Streams output back  │
+└──────────────────────┘           └──────────────────────┘
 
+Allowlist defined in .lain/permissions.toml
+MOTOKO audits every proxied operation
+```
+
+Shim binaries (docker, nvidia-smi, kubectl, etc.) are placed in the agent's PATH. The agent runs commands normally — shims transparently forward to the host proxy. The agent doesn't know the difference.
+
+### Per-pane, highest wins
+
+```
+Resolution: max(agent_default, repo_policy, directory_policy)
+
+agent_default    = Level 1  (claude-code)
+repo_policy      = Level 2  (.lain/permissions.toml in this repo)
+directory_policy = Level 3  (~/.config/lain-shell/directory-policies.toml)
+
+effective_level  = Level 3  (highest restriction wins)
+```
+
+Users can lower per-pane with explicit confirmation and audit logging.
+
+### Agent pane creation sequence
+
+```
 User: "open a new pane with Claude Code"
       │
       ▼
@@ -248,18 +296,22 @@ MAGGI translates intent to commands
       ├──1──▶ navi.create_pane(session, tab, type=agent)
       │       Navi creates pane structure (layout, metadata)
       │
-      ├──2──▶ core.pod_manager.create_pod(agent_config)
-      │       Pod manager:
-      │       ├── Creates container/namespace
-      │       ├── Queries MOTOKO for seccomp profile
-      │       ├── Applies seccomp, network policy, mounts
-      │       └── Returns pod handle
+      ├──2──▶ core.isolation_manager.create_isolation(agent_config)
+      │       Isolation Manager:
+      │       ├── Resolves effective level (agent + repo + directory)
+      │       ├── Queries MOTOKO for security profile
+      │       ├── Level 0: nothing (just PTY scanning)
+      │       ├── Level 1: creates namespace, applies seccomp, mounts
+      │       ├── Level 2: creates container, builds/pulls image
+      │       ├── Level 3: Level 2 + drops network
+      │       ├── Spawns host proxy if Level 1-3
+      │       └── Returns IsolationHandle
       │
-      ├──3──▶ core.pty_manager.create_pty(in_pod)
-      │       PTY spawned inside the pod
+      ├──3──▶ core.pty_manager.create_pty(in_isolation)
+      │       PTY spawned inside the namespace/container/host
       │
       └──4──▶ Events emitted:
-              PaneCreated, PodCreated, AgentSpawned
+              PaneCreated, IsolationCreated, AgentSpawned
               MOTOKO observes, begins monitoring
 ```
 
@@ -300,10 +352,10 @@ Hierarchy:
 | Kill pane | PTY dies, pane removed. If agent: container destroyed. | Session, tab, other panes. |
 | Kill tab | All panes in tab die. | Session, other tabs. |
 | Kill session | All tabs and panes die. | Other sessions. |
-| Kill agent pod | Container destroyed. Agent dies. Pane stays (shows exit). | Session, tab, pane structure. |
-| Pause agent | Container paused (SIGSTOP). Agent frozen. Pane shows "paused." Resumable. | Everything stays. |
+| Kill agent isolation | Namespace/container destroyed. Agent dies. Pane stays (shows exit). | Session, tab, pane structure. |
+| Pause agent | Agent frozen (SIGSTOP via IsolationHandle). Pane shows "paused." Resumable. | Everything stays. |
 
-Kill pod ≠ kill pane. MOTOKO CRITICAL pauses/kills the **agent pod**, not the pane. The user sees what happened and can decide.
+Kill isolation ≠ kill pane. MOTOKO CRITICAL pauses/kills the **agent's isolation environment**, not the pane. The user sees what happened and can decide.
 
 ---
 
@@ -518,11 +570,44 @@ motoko = "separate"   # run MOTOKO separately even in dev
 
 ---
 
+## .lain/ Config Mirror Pattern
+
+The `.lain/` directory in the project repo is **declarative source**. The active configuration lives in a safe directory outside the agent's reach. See ADR-010.
+
+```
+IN THE REPO (version controlled, agent-writable):
+  ~/project/.lain/
+  ├── config.toml           ← agent CAN modify (just project files)
+  ├── permissions.toml      ← agent CAN modify (just project files)
+  ���── policies.toml         ← agent CAN modify (just project files)
+  └── containers/Dockerfile ← agent CAN modify (helpful)
+
+  Modifying these has NO EFFECT on active isolation.
+  They are suggestions until a human syncs them.
+
+THE SAFE COPY (what lain-shell actually reads):
+  ~/.local/state/lain-shell/workspaces/<project-hash>/
+  ├── config.toml           ← copied from .lain/ via `lain config sync`
+  ├── permissions.toml      ← copied from .lain/ via `lain config sync`
+  ├── policies.toml         ← copied from .lain/ via `lain config sync`
+  └── containers/Dockerfile ��� copied from .lain/ via `lain config sync`
+
+  MOTOKO compiles rules from HERE.
+  Isolation Manager reads from HERE.
+  The agent cannot reach this path.
+```
+
+`lain config sync` shows a diff, requires user confirmation for security-relevant changes. MAGGI can prompt for sync when it detects repo `.lain/` differs from active config.
+
+**The agent cannot configure its own cage.**
+
+---
+
 ## System Invariants
 
 These must hold at all times, regardless of deployment mode:
 
-1. **No agent process exists without MOTOKO monitoring.** MOTOKO must be healthy before any agent pod is created.
+1. **No agent process exists without MOTOKO monitoring.** MOTOKO must be healthy before any agent isolation is created.
 2. **Every PTY is owned by exactly one Navi pane.** No orphan PTYs.
 3. **Config changes are atomic.** Partial writes are never visible.
 4. **Tier 1 enforcement survives MOTOKO crashes.** seccomp and namespaces are kernel-enforced.
@@ -530,6 +615,8 @@ These must hold at all times, regardless of deployment mode:
 6. **Policy authoring and enforcement are separated.** MOTOKO never writes policy files.
 7. **Cross-session MAGGI access is explicit.** No automatic context sharing between sessions.
 8. **The event bus cannot drop mandatory events.** Security and lifecycle events are always delivered.
+9. **Active security config is outside agent reach.** The `.lain/` mirror pattern ensures agents cannot modify their own isolation config. See ADR-010.
+10. **Isolation level resolution is max().** When multiple policies apply (agent default, repo policy, directory policy), the highest restriction wins. Lowering requires explicit user confirmation and audit logging.
 
 ---
 
@@ -542,14 +629,17 @@ User: "open Claude Code in a new pane"
 │
 ├─1─▶ MAGGI: parse intent
 ├─2─▶ MAGGI → Navi: create_pane(session, tab, type=agent, agent=claude-code)
-├─3─▶ Navi → Core.pod_manager: create_pod(seccomp=motoko.profile, net=restricted)
-├─4─▶ Core.pod_manager: creates container, applies seccomp, network policy
-├─5─▶ Core.pty_manager: create_pty(inside pod)
-├─6─▶ Navi: registers pane, updates layout
-├─7─▶ Events: PaneCreated, PodCreated, AgentSpawned → bus
-├─8─▶ MOTOKO: observes events, begins session monitoring
+├─3─▶ Navi → Core.isolation_manager: create_isolation(agent_config)
+│     Isolation Manager resolves effective level:
+│       max(claude-code default: L1, repo policy: L1) = Level 1
+├─4─▶ Core.isolation_manager: creates namespace, applies seccomp,
+│     constructs mount view, spawns host proxy, returns IsolationHandle
+├─5─▶ Core.pty_manager: create_pty(inside isolation)
+├─6─▶ Navi: registers pane with IsolationHandle, updates layout
+├─7─▶ Events: PaneCreated, IsolationCreated, AgentSpawned → bus
+├─8─▶ MOTOKO: observes events, begins monitoring (adapts to isolation level)
 ├─9─▶ Core.renderer: allocates render surface for new pane
-└─10─▶ Agent process starts, PTY output flows to renderer + MOTOKO
+└─10─��� Agent process starts, PTY output flows to renderer + MOTOKO
 ```
 
 ### Security event escalation
@@ -568,7 +658,7 @@ Agent attempts to read ~/.ssh/id_rsa
 │  ├─ ANOMALY: non-blocking indicator, queued for postmortem
 │  └─ CRITICAL:
 │     ├── MOTOKO → Navi: pause_session(session_id)
-│     ├── Navi pauses the agent pod (SIGSTOP)
+│     ├── Navi pauses the agent isolation (SIGSTOP via IsolationHandle)
 │     ├── Pane shows MOTOKO alert with context
 │     ├── MOTOKO → MAGGI (via bus): security event for explanation
 │     ├── MAGGI translates to plain language

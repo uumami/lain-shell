@@ -50,12 +50,14 @@ These are decisions, not candidates. For the investigation history, see `stack/i
 | Session persistence | Navi | Typed session serialization specific to lain-shell's model. |
 | Layout engine | Navi | Pane splits, resize, arrangement. |
 | Attach/detach protocol | Navi | Unix socket server/client for session reconnection. |
+| Isolation Manager | Core | Four-level isolation (ADR-009). Namespace, seccomp, containers, host proxy. |
+| Host proxy + shims | Core | Transparent proxying of Docker/GPU/tool commands from inside isolation. |
 | MOTOKO Tier 1 | MOTOKO | seccomp-BPF profiles, namespace setup, network policy. Custom per lain-shell's policy model. |
 | MOTOKO Tier 2 | MOTOKO | Behavioral baselines specific to lain-shell's session semantics. |
 | Rule engine | MOTOKO | Turing-incomplete DSL, Falco-shaped. Signed, compiled to efficient matchers. |
 | Audit log | MOTOKO | Append-only JSONL + hash chain. Simple, inspectable, tamper-evident. |
 | Agent tool system | MAGGI | `lain` CLI commands as JSON Schema tool definitions. |
-| Permission/policy engine | Core | `.lain/` manifest parsing, enforcement, validation. |
+| Permission/policy engine | Core | `.lain/` manifest parsing, enforcement, validation. Mirror pattern (ADR-010). |
 | THE WIRED protocol translation | THE WIRED | MCP/gRPC/Unix socket → internal command model. |
 | Bootstrap | — | Shell script (or Go binary if compiled needed). Not lain-shell itself. |
 

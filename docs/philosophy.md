@@ -67,7 +67,7 @@ That is the standard. Not hypothetical protection. Structural prevention.
 
 The lain-shell core targets under 80 MB with GPU rendering and under 15 MB headless. Hard constraint, not aspiration.
 
-Agent pods are separate OS processes. Their memory is not lain-shell's memory. A 200 MB agent pod does not affect the terminal's RSS. The architectural separation is what makes the lightweight guarantee achievable alongside powerful agent capabilities.
+Agent isolation environments (namespaces or containers) are separate from lain-shell's core process. Their memory is not lain-shell's memory. A 200 MB agent process does not affect the terminal's RSS. The architectural separation is what makes the lightweight guarantee achievable alongside powerful agent capabilities. Isolation is a spectrum (Level 0-3), not a binary — even the lightest isolation (Level 1, namespace + seccomp) adds negligible overhead.
 
 ### 5. Human readability matters
 
@@ -126,7 +126,7 @@ Core owns the pixels. It opens the window, renders the grid, handles input, mana
 
 The multiplexer and session manager. Named after the personal computers in Serial Experiments Lain — the Navi is the interface through which Lain connects to the Wired, manages her windows, and gains power.
 
-Navi owns sessions, panes, windows, layouts, attach/detach, and session persistence. It is a **purpose-built multiplexer** for the agentic age — not a wrapper around tmux, but a replacement that understands agent identity, permission scopes, cost tracking, and container-backed processes natively.
+Navi owns sessions, panes, windows, layouts, attach/detach, and session persistence. It is a **purpose-built multiplexer** for the agentic age — not a wrapper around tmux, but a replacement that understands agent identity, permission scopes, cost tracking, and isolated processes (configurable per-pane isolation levels) natively.
 
 Navi is built specifically for lain-shell. Where tmux tracks panes and windows as generic PTY containers, Navi tracks **typed sessions**: which agent is active, what permissions it holds, what its cost footprint is, what workspace it belongs to, what MOTOKO events have been recorded against it.
 
@@ -228,7 +228,7 @@ tmux and Zellij are excellent tools. The argument for lain-shell is not that the
 
 The original seed document proposed using tmux control mode as the session substrate. After analysis, this was rejected (see ADR-001).
 
-The core problem: lain-shell needs a multiplexer that understands agent identity, permission scopes, container-backed processes, cost tracking, structured lifecycle events, and typed session metadata. tmux provides none of these. Wrapping tmux would mean building a full session manager on top and translating between lain-shell's typed model and tmux's string-based one at every interaction. The wrapper would be thicker than the substrate.
+The core problem: lain-shell needs a multiplexer that understands agent identity, permission scopes, isolated processes (configurable per-pane isolation levels), cost tracking, structured lifecycle events, and typed session metadata. tmux provides none of these. Wrapping tmux would mean building a full session manager on top and translating between lain-shell's typed model and tmux's string-based one at every interaction. The wrapper would be thicker than the substrate.
 
 Navi is built from scratch. It takes the best ideas from tmux (session semantics, attach/detach, keyboard-driven workflow) and Zellij (modern UX, discoverable keybindings) but builds on a foundation designed for agents from the start.
 
@@ -246,7 +246,7 @@ The user who switches from tmux gets everything tmux gives — sessions, panes, 
 - A renderer that shows agent context without polluting shell output
 - Cost tracking and resource awareness per session
 - Session templates and workspace profiles
-- Native support for container-backed panes
+- Configurable isolation per pane (namespace, container, or air-gapped)
 
 ---
 

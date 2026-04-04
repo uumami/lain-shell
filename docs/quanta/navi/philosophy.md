@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Navi is the multiplexer for the agentic age. It manages sessions, panes, windows, layouts, attach/detach, and session persistence — not as generic PTY containers, but as **typed entities** that understand agent identity, permission scopes, cost tracking, and container-backed processes.
+Navi is the multiplexer for the agentic age. It manages sessions, panes, windows, layouts, attach/detach, and session persistence — not as generic PTY containers, but as **typed entities** that understand agent identity, permission scopes, cost tracking, and isolated processes (configurable per-pane isolation levels).
 
 Named after the personal computers in Serial Experiments Lain. The Navi is the interface through which Lain connects to the Wired, manages her windows, and gains power over her environment.
 
@@ -18,7 +18,7 @@ tmux and Zellij are excellent for human-only terminal multiplexing. Navi exists 
 
 - **Agent identity** — which agent owns which pane, what model powers it, what role it plays
 - **Permission scopes** — per-pane, per-session boundaries enforced at the OS level
-- **Container backing** — panes that run inside isolated pods, not just naked PTYs
+- **Isolation backing** — panes that run inside isolated environments (namespace, container, or air-gapped), not just naked PTYs
 - **Cost tracking** — per-session token and resource accounting
 - **Structured lifecycle events** — typed events for session create, pause, resume, kill, attach, detach
 - **Session metadata** — typed, queryable, not just string key-value pairs
@@ -56,7 +56,7 @@ Like Core, Navi is deterministic. It manages sessions and panes. It does not inv
 A single Navi session can contain:
 - A plain shell pane (bash, zsh, fish)
 - An agent pane (Claude Code, Codex, etc.)
-- A container-backed pane (isolated pod)
+- An isolated pane (namespace, container, or air-gapped — per ADR-009)
 - A read-only pane (log viewer, status monitor)
 
 Each pane type has different security properties, lifecycle behavior, and metadata. Navi handles all of them.
@@ -91,7 +91,7 @@ Each pane type has different security properties, lifecycle behavior, and metada
 
 1. **Session persistence format.** How are sessions serialized? What is persisted (layout, working directories, environment) vs. reconstructed?
 2. **Agent session lifecycle.** When a pane runs an agent, how does Navi interact with MOTOKO for security context? How does "pause agent" work at the Navi level?
-3. **Container-backed panes.** How does Navi request container creation? Does it go through Core or directly to the OS?
+3. ~~**Container-backed panes.**~~ ✓ Resolved. Generalized to isolation levels (ADR-009). Navi requests isolation from Core's Isolation Manager. Level 0-3 spectrum.
 4. **Layout engine.** Binary tree splits (like tmux)? Something more flexible? How do saved layouts interact with session templates?
 5. **Multi-window model.** tmux has sessions > windows > panes. Does Navi use the same hierarchy or something different?
 
