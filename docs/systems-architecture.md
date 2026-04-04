@@ -579,7 +579,7 @@ IN THE REPO (version controlled, agent-writable):
   ~/project/.lain/
   ├── config.toml           ← agent CAN modify (just project files)
   ├── permissions.toml      ← agent CAN modify (just project files)
-  ���── policies.toml         ← agent CAN modify (just project files)
+  ├── policies.toml         ← agent CAN modify (just project files)
   └── containers/Dockerfile ← agent CAN modify (helpful)
 
   Modifying these has NO EFFECT on active isolation.
@@ -590,7 +590,7 @@ THE SAFE COPY (what lain-shell actually reads):
   ├── config.toml           ← copied from .lain/ via `lain config sync`
   ├── permissions.toml      ← copied from .lain/ via `lain config sync`
   ├── policies.toml         ← copied from .lain/ via `lain config sync`
-  └── containers/Dockerfile ��� copied from .lain/ via `lain config sync`
+  └── containers/Dockerfile ← copied from .lain/ via `lain config sync`
 
   MOTOKO compiles rules from HERE.
   Isolation Manager reads from HERE.
@@ -639,7 +639,7 @@ User: "open Claude Code in a new pane"
 ├─7─▶ Events: PaneCreated, IsolationCreated, AgentSpawned → bus
 ├─8─▶ MOTOKO: observes events, begins monitoring (adapts to isolation level)
 ├─9─▶ Core.renderer: allocates render surface for new pane
-└─10─��� Agent process starts, PTY output flows to renderer + MOTOKO
+└─10─▶ Agent process starts, PTY output flows to renderer + MOTOKO
 ```
 
 ### Security event escalation
@@ -675,16 +675,28 @@ Agent attempts to read ~/.ssh/id_rsa
 
 ```
 Detach (user closes terminal window):
-├── Renderer disconnects
+├── Client's AttachHandle removed
 ├── Navi server keeps running (PTYs alive, agents running)
 ├── MOTOKO keeps monitoring
-├── MAGGI stays available (but no user input)
-└── Session state unchanged
+├── MAGGI stays available (but no user input from this client)
+├── Session state unchanged
+├── Other attached clients: unaffected
+└── If last client detaches: session persists, no viewers
 
 Reattach (user opens new terminal, runs `lain attach work`):
 ├── New renderer connects to Navi server via Unix socket
+├── Navi creates new AttachHandle with view state (active tab, focused pane)
 ├── Navi sends current layout + pane state
 ├── Renderer reconstructs the view
-├── PTY output resumes flowing to renderer
+├── PTY output flows to this client
 ├── Session continues exactly where it was
+└── Other attached clients: unaffected
+
+Multi-client (two windows on same session):
+├── Client A: local terminal, 200×50, viewing Tab 1
+├── Client B: remote via THE WIRED, 80×24, viewing Tab 2
+├── Each has its own AttachHandle with independent view state
+├── Input from A → A's focused pane. Input from B → B's focused pane.
+├── PTY output broadcast to all clients viewing that tab
+└── PTY size: smallest client viewing each tab (recalculated on attach/detach/switch)
 ```

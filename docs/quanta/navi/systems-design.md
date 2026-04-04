@@ -54,10 +54,10 @@ Navi is custom-built (ADR-001). No tmux dependency. No Zellij dependency.
 │     Navi Server           │
 │  (long-running process)   │
 │                           │
-│  Sessions ──┬── Window 1  │
+│  Sessions ──┬── Tab 1     │
 │             │   ├─ Pane A │
 │             │   └─ Pane B │
-│             └── Window 2  │
+│             └── Tab 2     │
 │                 └─ Pane C │
 │                           │
 │  Unix socket listener     │
@@ -75,7 +75,7 @@ Navi is custom-built (ADR-001). No tmux dependency. No Zellij dependency.
 
 This is the tmux server-client pattern. The server owns state. Clients render. Detach = client disconnects. Reattach = new client connects. Multiple clients can attach to the same session (pair programming).
 
-> **Open question:** When multiple clients attach, do they all see the same active window? Or can each client navigate independently? tmux supports both modes. Navi should too.
+> **Resolved:** Each client navigates independently. View state (active tab, focused pane, scroll position) is per-client on `AttachHandle`, not shared on the session. See `quanta/navi/systems-architecture.md` for the session state vs view state split.
 
 ---
 

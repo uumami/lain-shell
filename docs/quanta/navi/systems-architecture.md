@@ -90,9 +90,15 @@ Serializes session state to TOML for restart recovery. Stored in `~/.local/state
 
 Unix domain socket server at `/run/user/$UID/lain/navi.sock`. Clients (renderer instances) connect to view and interact with sessions. Detach = client disconnects. Reattach = new client connects and receives current state.
 
+Multiple clients can attach to the same session simultaneously. Each client gets its own `AttachHandle` with independent view state (active tab, focused pane, scroll position, terminal size). Local and remote clients (via THE WIRED) are architecturally identical — both get an `AttachHandle`, the difference is transport fidelity.
+
 ---
 
-## Session Data Model
+## Data Model — Session State vs View State
+
+Session state and view state are **separate concerns**. Session state is shared across all clients. View state is per-client. This separation is what makes multi-client attach work — two windows (local or remote) can view the same session independently.
+
+### Session state (shared, lives on server)
 
 ```rust
 struct Session {
@@ -109,7 +115,7 @@ struct Tab {
     id: TabId,
     name: String,
     layout: LayoutTree,  // binary tree of splits
-    active_pane: PaneId,
+    // NOTE: no active_pane here — that is view state, per-client
 }
 
 struct Pane {
@@ -129,6 +135,70 @@ enum PaneType {
 }
 ```
 
+### View state (per-client, lives on AttachHandle)
+
+```rust
+struct AttachHandle {
+    id: AttachId,
+    session: SessionId,
+    active_tab: TabId,                              // which tab THIS client sees
+    focused_pane: PaneId,                            // which pane gets THIS client's input
+    terminal_size: TerminalSize,                     // THIS client's dimensions
+    scroll_positions: HashMap<PaneId, ScrollOffset>, // per-pane scroll for THIS client
+    client_type: ClientType,
+    connected_at: Timestamp,
+}
+
+enum ClientType {
+    Local,                          // Unix socket, full fidelity
+    Remote { protocol: Protocol },  // gRPC via THE WIRED, needs differential updates
+}
+```
+
+### Why the split matters
+
+```
+Client A (local, 200×50):
+  AttachHandle { active_tab: Tab 2, focused_pane: Pane D, ... }
+
+Client B (remote, 80×24):
+  AttachHandle { active_tab: Tab 1, focused_pane: Pane A, ... }
+
+Same session. Independent navigation.
+
+Input from Client A → routed to Pane D's PTY
+Input from Client B → routed to Pane A's PTY
+PTY output → broadcast to all clients attached to that session
+```
+
+### Multi-client resize strategy
+
+When multiple clients view the same pane, the PTY has one size. Strategy: **smallest client wins** (tmux-validated default).
+
+```
+Client A: 200×50, viewing Tab 1
+Client B: 80×24, viewing Tab 1
+
+Tab 1's PTY size: 80×24 (smallest of clients viewing it)
+Client A sees the 80×24 content centered/aligned in its larger window.
+
+If Client B switches to Tab 2:
+Tab 1's PTY resizes to 200×50 (only Client A is viewing it now)
+```
+
+PTY size is recalculated when:
+- A client attaches or detaches
+- A client switches tabs
+- A client resizes its terminal
+
+### Multi-client output broadcast
+
+Navi maintains a per-client output queue. When a PTY produces output:
+1. VTE parser updates the shared cell grid
+2. Navi sends the update to each client currently viewing that tab
+3. Local clients get the full cell diff
+4. Remote clients (via THE WIRED) get compressed differential updates
+
 ---
 
 ## Interface Exposed to Other Quanta
@@ -142,17 +212,21 @@ trait NaviApi: Send + Sync {
     async fn list_sessions(&self) -> Result<Vec<SessionInfo>>;
     async fn get_session(&self, id: SessionId) -> Result<SessionDetail>;
 
-    // Tabs
+    // Tabs (session state — affects all clients)
     async fn create_tab(&self, session: SessionId, params: TabParams) -> Result<TabId>;
-    async fn switch_tab(&self, session: SessionId, tab: TabId) -> Result<()>;
     async fn close_tab(&self, session: SessionId, tab: TabId) -> Result<()>;
 
-    // Panes
+    // Panes (session state — affects all clients)
     async fn create_pane(&self, session: SessionId, tab: TabId, params: PaneParams) -> Result<PaneId>;
     async fn split_pane(&self, pane: PaneId, direction: SplitDirection) -> Result<PaneId>;
     async fn close_pane(&self, pane: PaneId) -> Result<()>;
     async fn resize_pane(&self, pane: PaneId, size: PaneSize) -> Result<()>;
     async fn get_pane_output(&self, pane: PaneId, lines: usize) -> Result<Vec<String>>;
+
+    // View state (per-client — only affects the calling client)
+    async fn switch_tab(&self, handle: AttachId, tab: TabId) -> Result<()>;
+    async fn focus_pane(&self, handle: AttachId, pane: PaneId) -> Result<()>;
+    async fn scroll_pane(&self, handle: AttachId, pane: PaneId, offset: ScrollOffset) -> Result<()>;
 
     // Agent lifecycle (MOTOKO calls these)
     async fn pause_session(&self, id: SessionId) -> Result<()>;
@@ -160,8 +234,9 @@ trait NaviApi: Send + Sync {
     async fn pause_pane_agent(&self, pane: PaneId) -> Result<()>;
 
     // Attach/detach
-    async fn attach(&self, session: SessionId) -> Result<AttachHandle>;
-    async fn detach(&self, handle: AttachHandle) -> Result<()>;
+    async fn attach(&self, session: SessionId, client_type: ClientType) -> Result<AttachHandle>;
+    async fn detach(&self, handle: AttachId) -> Result<()>;
+    async fn list_attached(&self, session: SessionId) -> Result<Vec<AttachInfo>>;
 }
 ```
 

@@ -41,6 +41,8 @@
 
 12. ~~**Container-backed panes.**~~ ✓ Resolved. Generalized to isolation levels (ADR-009). Navi requests isolation from Core's Isolation Manager. Level 0 (naked), Level 1 (sandboxed, default), Level 2 (contained), Level 3 (air-gapped). Host proxy for transparent Docker/GPU access. See `systems-architecture.md`.
 
+13. ~~**Multi-client attach model.**~~ ✓ Resolved. Session state (tabs, panes, PTYs) is shared. View state (active tab, focused pane, scroll, terminal size) is per-client on `AttachHandle`. Independent navigation. Smallest-client-wins resize. See `quanta/navi/systems-architecture.md`.
+
 ---
 
 ## MOTOKO

@@ -30,7 +30,7 @@ The goal is to build the **best terminal for the agentic age**. Not the most pop
 
 1. The terminal works perfectly with **no agent at all**.
 2. Agents are first-class citizens when present.
-3. Security is **opt-out, not opt-in** — the default is maximum restriction.
+3. Security is **opt-out, not opt-in** — the default is the highest restriction compatible with the use case (see ADR-009).
 4. The platform stays **lightweight, inspectable, and durable** as agentic behavior grows.
 5. Configuration is **explicit, human-readable, and version-controlled**.
 6. The platform is worth replacing tmux/Zellij for reasons that have nothing to do with AI.
