@@ -33,15 +33,63 @@ For: trusted agents, GPU workloads where passthrough is impractical, users who e
 
 Agent runs in a Linux namespace with seccomp-BPF restrictions. No container runtime needed.
 
-- **seccomp-BPF**: blocks dangerous syscalls (ptrace, mount, setns, bpf, kexec, etc.)
+- **Mount namespace**: controls what files are visible (primary security boundary for path-level access)
+- **seccomp-BPF**: controls which syscall classes are available (not used for path-level file policy)
 - **PID namespace**: agent can only see its own process tree
-- **Mount namespace**: controlled filesystem view — project directory read-write, specific dotfiles read-only, host tools (/usr, /bin) read-only, /home empty except mounts
 - **Network**: host network stack with outbound filtering via iptables
 - **Host proxy**: optional, for Docker/GPU/tool access from inside the sandbox
 
 MOTOKO: Tier 1a (seccomp) + Tier 1b (PTY scanning).
 
 For: daily coding, the default for most users.
+
+#### Level 1 Mount Table
+
+Path security comes from mount namespace construction — sensitive files are never mounted, so they don't exist from the agent's perspective. This is more reliable than syscall filtering (seccomp cannot filter by file path).
+
+| Path inside sandbox | Source | Mode |
+|---|---|---|
+| `/` | tmpfs | empty root |
+| `/usr` | host `/usr` | read-only |
+| `/bin` | host `/bin` | read-only |
+| `/lib`, `/lib64` | host `/lib`, `/lib64` | read-only |
+| `/etc/resolv.conf` | host `resolv.conf` | read-only |
+| `/etc/hosts` | host `hosts` | read-only |
+| `/etc/ssl` | host `/etc/ssl` | read-only |
+| `/tmp` | private tmpfs | read-write |
+| `/dev/{null,zero,urandom}` | devtmpfs | standard |
+| `/proc` | new procfs | PID-namespaced |
+| `/workspace` | project directory | read-write |
+| `/home/agent/.cargo` | host `~/.cargo` | read-only |
+| `/home/agent/.rustup` | host `~/.rustup` | read-only |
+| `/home/agent/.npm` | host `~/.npm` | read-only |
+| `/home/agent/.config/git` | host git config | read-only |
+| `/run/lain/proxy.sock` | host proxy socket | read-write |
+
+**Not mounted (invisible to agent):** `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.kube`, `~/other-projects`, `/mnt/*`, host `/home/*` (except curated dotfiles above).
+
+Additional read-only mounts (e.g., `~/.pyenv`, `~/.goenv`) are configurable per workspace in `.lain/permissions.toml`, read from the safe mirror (ADR-010).
+
+#### Level 1 Seccomp Profile
+
+Seccomp handles **syscall class restrictions**, not path authorization (that's the mount namespace's job).
+
+**Blocked syscalls:**
+
+| Syscall | Why |
+|---|---|
+| `ptrace`, `process_vm_readv/writev` | Cannot inspect other processes |
+| `mount`, `umount2` | Cannot escape mount namespace |
+| `setns`, `unshare` | Cannot create new namespaces |
+| `bpf` | Cannot load eBPF programs |
+| `kexec_load`, `kexec_file_load` | Cannot replace kernel |
+| `init_module`, `finit_module` | Cannot load kernel modules |
+| `pivot_root`, `chroot` | Cannot change root |
+| `personality` | Cannot change execution domain |
+| `reboot` | Cannot reboot |
+| `swapon`, `swapoff` | Cannot manipulate swap |
+
+**Allowed (needed for coding):** `open`/`read`/`write`/`close` (file I/O — mount namespace limits visibility), `fork`/`execve`/`clone` (process creation — PID namespace limits scope), `socket`/`connect`/`bind` (networking — iptables limits destinations), `ioctl` (terminal ops), `mmap`/`mprotect`/`brk` (memory management).
 
 ### Level 2 — Contained
 

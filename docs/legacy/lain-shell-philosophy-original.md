@@ -1,3 +1,5 @@
+> **⚠ LEGACY DOCUMENT.** This is the original seed philosophy, preserved for historical context. It predates ADR-001 (custom multiplexer — this doc recommends tmux control mode) and ADR-004 (wgpu renderer — this doc recommends ratatui). For the current design, see `docs/philosophy.md`, `docs/systems-architecture.md`, and `docs/decisions/`.
+
 # lain-shell — Complete Philosophy and Product Vision
 ### Built by NERV. For the agentic age.
 > *"Present day. Present time."*

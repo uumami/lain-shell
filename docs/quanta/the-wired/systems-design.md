@@ -48,7 +48,7 @@
 4. **Unix socket protocol.** JSON-RPC 2.0 over Unix domain socket. Simple, well-specified, tooling exists. No need for a custom protocol.
 
 5. **Auth implementation.**
-   - Tokens issued by Navi at connection time
+   - Tokens issued by THE WIRED's auth engine (via `WiredApi::create_token` or `lain token create`)
    - Scoped to specific permissions (read-only, session-manage, agent-control, admin)
    - Short-lived by default (expire with session)
    - Long-lived tokens available for automation (explicit user creation, logged)

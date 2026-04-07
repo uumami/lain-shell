@@ -60,4 +60,4 @@ Core never invokes a model. It is deterministic. It parses, renders, spawns, rou
 
 1. **Rendering architecture.** How do GPU and CPU paths coexist behind a trait? How does the overlay compositor work?
 2. **Config hot-reload.** Which config changes take effect immediately vs. requiring a restart?
-3. **Event bus.** How does Core emit events that other quanta consume? Push vs. pull? Typed channels?
+3. ~~**Event bus.**~~ ✓ Resolved. Hybrid model: direct trait calls for request/response, two-tier event bus for observation (mandatory audit writes + observable broadcast), dedicated channel for MOTOKO. See ADR-006 and `systems-architecture.md`.

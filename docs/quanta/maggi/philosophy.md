@@ -83,6 +83,6 @@ MAGGI activates on events and user input. It does not run a continuous inference
 
 1. **MAGGI's tool interface.** What tools does MAGGI have? The `lain` CLI commands exposed as JSON Schema function definitions? Something richer?
 2. **System prompt.** What is MAGGI's system prompt? How much platform knowledge is baked in vs. retrieved dynamically?
-3. **Multi-model fallback.** If the primary model is unavailable, does MAGGI fall back to a cheaper/local model? Or does it clearly say "I'm unavailable right now"?
-4. **Conversation persistence.** Does MAGGI remember previous conversations? Per-session only? Per-workspace? User-configured?
-5. **Trust boundary with coding agents.** How is isolation verified at the model-provider level when MAGGI uses the same provider as a coding agent?
+3. ~~**Multi-model fallback.**~~ ✓ Partially resolved. MAGGI clearly reports unavailability. Fallback to cheaper/local model is configurable. See `quanta/maggi/systems-architecture.md`.
+4. ~~**Conversation persistence.**~~ ✓ Resolved. Per-session by default. Configurable. Four-dimensional memory scoping (user, session, agent, scope). See `systems-architecture.md`.
+5. ~~**Trust boundary with coding agents.**~~ ✓ Partially resolved. Four-dimensional memory scoping. Isolation levels (ADR-009). Model-provider level isolation still needs verification at implementation time. See `systems-architecture.md`.

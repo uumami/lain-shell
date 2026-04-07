@@ -93,7 +93,7 @@ Each pane type has different security properties, lifecycle behavior, and metada
 2. **Agent session lifecycle.** When a pane runs an agent, how does Navi interact with MOTOKO for security context? How does "pause agent" work at the Navi level?
 3. ~~**Container-backed panes.**~~ ✓ Resolved. Generalized to isolation levels (ADR-009). Navi requests isolation from Core's Isolation Manager. Level 0-3 spectrum.
 4. **Layout engine.** Binary tree splits (like tmux)? Something more flexible? How do saved layouts interact with session templates?
-5. **Multi-window model.** tmux has sessions > windows > panes. Does Navi use the same hierarchy or something different?
+5. ~~**Multi-window model.**~~ ✓ Resolved. Session → Tab → Pane hierarchy (ADR-007). Tabs replace tmux's "windows" to avoid confusion with OS windows. See `quanta/navi/systems-architecture.md`.
 
 ---
 

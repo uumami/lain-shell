@@ -121,12 +121,15 @@ struct Tab {
 struct Pane {
     id: PaneId,
     pane_type: PaneType,         // Shell, Agent, ReadOnly
-    pty_handle: PtyHandle,       // from Core
-    isolation_handle: Option<IsolationHandle>, // from Core's Isolation Manager
+    pty_id: PtyId,               // serializable reference to Core's PTY (Core owns the fd + Term)
+    isolation_handle: Option<IsolationHandle>, // serializable ID, Core owns the real handle
     working_dir: PathBuf,
     agent_info: Option<AgentInfo>,
     created_at: Timestamp,
 }
+// Navi stores PtyId (serializable), not PtyHandle (OS fd wrapper).
+// Core owns the full PTY pipeline: fd, alacritty_terminal::Term, scrollback.
+// Navi queries cell state via CorePtyApi::get_cells(pty_id, region).
 
 enum PaneType {
     Shell,
@@ -193,11 +196,12 @@ PTY size is recalculated when:
 
 ### Multi-client output broadcast
 
-Navi maintains a per-client output queue. When a PTY produces output:
-1. VTE parser updates the shared cell grid
-2. Navi sends the update to each client currently viewing that tab
-3. Local clients get the full cell diff
-4. Remote clients (via THE WIRED) get compressed differential updates
+Core owns VTE parsing and the cell grid. Navi routes rendered output to clients. When a PTY produces output:
+1. Core feeds bytes into `alacritty_terminal::Term`, updating the cell grid and scrollback
+2. Core emits cell diffs on `subscribe_cell_changes(pty_id)`
+3. Navi receives the diffs and routes them to each client currently viewing that tab
+4. Local clients get the full cell diff
+5. Remote clients (via THE WIRED) get compressed differential updates
 
 ---
 
@@ -254,9 +258,39 @@ trait NaviApi: Send + Sync {
 
 ---
 
+## Crash Recovery
+
+Navi stores `PtyId` (serializable), not the OS-level `PtyHandle`. Core owns live PTYs. This means Navi can crash and recover without losing running processes.
+
+**Navi recovery flow (supervisor restarts Navi):**
+
+```
+1. Navi reads persisted session topology from TOML
+   (~/.local/state/lain-shell/sessions/*.toml)
+
+2. Navi queries Core: "which PtyIds are still alive?"
+   core.list_live_ptys() → Vec<PtyId>
+
+3. Reconcile:
+   For each pane in persisted topology:
+     if pane.pty_id ∈ live_ptys:
+       restore pane (PTY is still running, reconnect)
+     else:
+       mark pane as "[exited]" (PTY died while Navi was down)
+
+4. Rebuild layout tree from persisted splits/ratios.
+
+5. Accept client connections on Unix socket.
+   Clients reattach and see restored sessions.
+```
+
+**Core crash (everything dies):** PTYs are OS file descriptors — when Core's process dies, the OS reclaims them. Navi's persisted TOML still has topology, but all PTY references are stale. On full restart, Navi creates new PTYs for each pane (new shell processes, scrollback lost).
+
+---
+
 ## Integration with Other Quanta
 
-- **Core**: Navi calls Core's PTY, Render, and Isolation APIs. Core streams PTY output and exit events back.
-- **MOTOKO**: Navi emits session/agent lifecycle events to the bus. MOTOKO calls `pause_session`/`kill_session` on CRITICAL events.
+- **Core**: Navi calls Core's PTY, Render, and Isolation APIs. Core streams cell changes and exit events back. Navi holds `PtyId` references; Core owns the fd, `Term`, and scrollback.
+- **MOTOKO**: Navi emits session/agent lifecycle events (mandatory: to audit log, observable: to bus). MOTOKO calls `pause_session`/`kill_session` on CRITICAL events.
 - **MAGGI**: MAGGI calls Navi's API for session/tab/pane management. MAGGI queries session state for context.
 - **THE WIRED**: External requests for session management route through the command router to Navi's API.

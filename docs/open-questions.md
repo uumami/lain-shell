@@ -47,58 +47,58 @@
 
 ## MOTOKO
 
-13. **Behavioral baseline establishment.** How is the baseline built for a new agent? Suggested: first N sessions (default: 5). But: what data is collected? What algorithm? How is the baseline stored?
+14. **Behavioral baseline establishment.** How is the baseline built for a new agent? Suggested: first N sessions (default: 5). But: what data is collected? What algorithm? How is the baseline stored?
 
-14. **Tier 3 model selection.** Smallest model that reliably distinguishes genuine exfiltration from false positive. Empirical.
+15. **Tier 3 model selection.** Smallest model that reliably distinguishes genuine exfiltration from false positive. Empirical.
 
-15. **Tier 3 isolation.** How is the summarized event window prepared? What information is included vs. excluded?
+16. **Tier 3 isolation.** How is the summarized event window prepared? What information is included vs. excluded?
 
-16. **macOS security parity.** macOS lacks seccomp-BPF. `sandbox-exec` is deprecated. What is the Tier 1 story on macOS?
+17. **macOS security parity.** macOS lacks seccomp-BPF. `sandbox-exec` is deprecated. What is the Tier 1 story on macOS?
 
-17. **Rule DSL design.** Falco-shaped, Turing-incomplete. Sketch exists in `quanta/motoko/systems-design.md`. Full language specification needed.
+18. **Rule DSL design.** Falco-shaped, Turing-incomplete. Sketch exists in `quanta/motoko/systems-design.md`. Full language specification needed.
 
 ---
 
 ## MAGGI
 
-18. **Trust boundary with coding agents.** ✓ Partially resolved. Four-dimensional memory scoping (user, session, agent, scope) in `systems-architecture.md`. Model-provider level isolation still needs verification at implementation time.
+19. **Trust boundary with coding agents.** ✓ Partially resolved. Four-dimensional memory scoping (user, session, agent, scope) in `systems-architecture.md`. Model-provider level isolation still needs verification at implementation time.
 
-19. **System prompt design.** How much platform knowledge is baked into the prompt vs. retrieved via RAG? See `future.md` for MAGGI infrastructure ideas.
+20. **System prompt design.** How much platform knowledge is baked into the prompt vs. retrieved via RAG? See `future.md` for MAGGI infrastructure ideas.
 
-20. ~~**Conversation persistence.**~~ ✓ Resolved. Per-session by default. Configurable. Four-dimensional memory scoping. See `systems-architecture.md`.
+21. ~~**Conversation persistence.**~~ ✓ Resolved. Per-session by default. Configurable. Four-dimensional memory scoping. See `systems-architecture.md`.
 
 ---
 
 ## THE WIRED
 
-21. **Auth model.** Token-based. Short-lived by default. Scoped to permissions. But: how are tokens issued and verified? Integration with MOTOKO audit?
+22. **Auth model.** Token-based. Short-lived by default. Scoped to permissions. But: how are tokens issued and verified? Integration with MOTOKO audit?
 
-22. **gRPC service design.** Sketched in `quanta/the-wired/systems-design.md`. Full protobuf definitions needed.
+23. **gRPC service design.** Sketched in `quanta/the-wired/systems-design.md`. Full protobuf definitions needed.
 
-23. **Remote session buffer.** For mobile/remote: what format? Differential updates? See `future.md`.
+24. **Remote session buffer.** For mobile/remote: what format? Differential updates? See `future.md`.
 
 ---
 
 ## Community and Governance
 
-24. **Community MOTOKO rule governance.** Who reviews and signs community rules? NERV as interim custodian, community governance as goal. See `future.md`.
+25. **Community MOTOKO rule governance.** Who reviews and signs community rules? NERV as interim custodian, community governance as goal. See `future.md`.
 
-25. **Plugin registry governance.** Community-operated, but how? Who signs? Trust levels?
+26. **Plugin registry governance.** Community-operated, but how? Who signs? Trust levels?
 
-26. **Shared team sessions.** Architecture supports it. UX and permission model need design. See `future.md`.
+27. **Shared team sessions.** Architecture supports it. UX and permission model need design. See `future.md`.
 
 ---
 
 ## Isolation and Security
 
-27. **Host proxy shim curation.** Which commands ship with shims by default (docker, podman, nvidia-smi, kubectl)? How do users add custom shims? Is it a config list or do they create shim binaries?
+28. **Host proxy shim curation.** Which commands ship with shims by default (docker, podman, nvidia-smi, kubectl)? How do users add custom shims? Is it a config list or do they create shim binaries?
 
-28. **Host proxy path translation.** When translating paths from sandbox to host (e.g., for Docker volume mounts in compose files), how deep does the rewriting go? Does it rewrite inside YAML files, or only command-line arguments?
+29. **Host proxy path translation.** When translating paths from sandbox to host (e.g., for Docker volume mounts in compose files), how deep does the rewriting go? Does it rewrite inside YAML files, or only command-line arguments?
 
-29. **Nested container monitoring.** When an agent launches `docker compose` via host proxy, MOTOKO can statically analyze the compose file and monitor host-level network/resource usage. But it cannot scan PTY output inside composed containers. Is this acceptable, or does MOTOKO need deeper visibility here?
+30. **Nested container monitoring.** When an agent launches `docker compose` via host proxy, MOTOKO can statically analyze the compose file and monitor host-level network/resource usage. But it cannot scan PTY output inside composed containers. Is this acceptable, or does MOTOKO need deeper visibility here?
 
-30. **Agent checkpoint/restore for level switching.** Seamless isolation level switching requires checkpointing agent state (conversation, working directory, environment) and restoring in a new isolation environment. Which agents support this? What's the fallback for agents that don't? See `future.md`.
+31. **Agent checkpoint/restore for level switching.** Seamless isolation level switching requires checkpointing agent state (conversation, working directory, environment) and restoring in a new isolation environment. Which agents support this? What's the fallback for agents that don't? See `future.md`.
 
-31. **Level 1 mount namespace construction.** Exactly what directories are visible at Level 1? How is the mount view constructed? Which dotfiles are mounted by default vs. configured?
+32. ~~**Level 1 mount namespace construction.**~~ ✓ Resolved in `decisions/009-isolation-levels.md`. Exact mount table, seccomp class list, configurable extra mounts via `.lain/permissions.toml`.
 
-32. **Config sync automation.** Can `lain config sync` be automated via git hooks (post-merge, post-checkout)? Should MAGGI auto-detect when repo `.lain/` differs from active config?
+33. **Config sync automation.** Can `lain config sync` be automated via git hooks (post-merge, post-checkout)? Should MAGGI auto-detect when repo `.lain/` differs from active config?

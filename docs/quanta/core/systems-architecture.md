@@ -64,7 +64,18 @@ Single entry point for all commands — CLI, MCP, gRPC, Unix socket. Parses inpu
 
 ### Event Bus
 
-Profile-filtered pub/sub system. In-process: tokio broadcast channels. Separate processes: pub/sub over Unix sockets. Mandatory events (security, lifecycle) bypass the profile filter.
+Two-tier event system. Mandatory events (security, audit, lifecycle) are synchronously written to MOTOKO's audit log — durable, ordered, fail-closed. Observable events (debug, informational, profile-filtered) are delivered via `tokio::broadcast` (in-process) or pub/sub over Unix sockets (separate processes) — best-effort, may drop for lagging receivers. See `systems-architecture.md` for the full event delivery model.
+
+### PTY and VTE State Ownership
+
+Core owns the full PTY pipeline: file descriptor (via `portable-pty`), VTE terminal state (`alacritty_terminal::Term` instance), and scrollback ring buffer. No other quantum holds raw PTY file descriptors or `Term` instances. Navi references PTYs by `PtyId` (a serializable identifier from `lain-types`), not by `PtyHandle` (an OS-level fd wrapper that is Core-internal only).
+
+This means:
+- Core feeds raw PTY bytes into `Term`, updating the cell grid and scrollback
+- The renderer reads cells from Core (no round-trip through Navi)
+- MOTOKO's dedicated channel receives raw bytes from Core
+- If Navi crashes, Core keeps PTYs alive and can render "last known state"
+- If Core crashes, all PTYs die (OS reclaims fds)
 
 ### Storage
 
@@ -78,12 +89,24 @@ State, cache, and data directories. Follows XDG on Linux (`~/.local/state/lain-s
 
 ```rust
 trait CorePtyApi {
-    async fn create_pty(&self, params: PtyParams) -> Result<PtyHandle>;
-    async fn resize_pty(&self, handle: PtyHandle, size: PtySize) -> Result<()>;
-    async fn destroy_pty(&self, handle: PtyHandle) -> Result<()>;
-    fn subscribe_pty_output(&self, handle: PtyHandle) -> PtyOutputStream;
-    fn subscribe_pty_exit(&self, handle: PtyHandle) -> PtyExitReceiver;
+    // Lifecycle
+    async fn create_pty(&self, params: PtyParams) -> Result<PtyId>;
+    async fn destroy_pty(&self, id: PtyId) -> Result<()>;
+    async fn resize_pty(&self, id: PtyId, size: TerminalSize) -> Result<()>;
+    async fn write_pty(&self, id: PtyId, data: &[u8]) -> Result<()>;
+
+    // State queries (renderer and Navi use these)
+    async fn get_cells(&self, id: PtyId, region: CellRegion) -> Result<CellGrid>;
+    async fn get_scrollback(&self, id: PtyId, lines: usize) -> Result<Vec<Row>>;
+    async fn get_cursor(&self, id: PtyId) -> Result<CursorState>;
+
+    // Subscriptions
+    fn subscribe_pty_output(&self, id: PtyId) -> PtyOutputStream;      // raw bytes (for MOTOKO)
+    fn subscribe_pty_exit(&self, id: PtyId) -> PtyExitReceiver;
+    fn subscribe_cell_changes(&self, id: PtyId) -> CellChangeStream;   // parsed diffs (for renderer)
 }
+// Note: PtyId is a serializable identifier from lain-types.
+// PtyHandle (wrapping the OS fd) is Core-internal only.
 
 trait CoreRenderApi {
     async fn allocate_surface(&self, region: RenderRegion) -> Result<SurfaceHandle>;
@@ -108,7 +131,7 @@ trait CoreIsolationApi {
 
 ```rust
 trait CoreMotokoApi {
-    fn subscribe_pty_stream(&self, handle: PtyHandle) -> PtyByteStream;
+    fn subscribe_pty_stream(&self, id: PtyId) -> PtyByteStream;
     async fn get_seccomp_profile(&self, agent_type: AgentType) -> Result<SeccompProfile>;
     async fn get_host_proxy_log(&self, handle: IsolationHandle) -> Result<Vec<ProxiedCommand>>;
 }

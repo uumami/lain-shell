@@ -1,3 +1,5 @@
+> **⚠ LEGACY DOCUMENT.** This reference guide predates ADR-001 (custom multiplexer — this doc recommends tmux control mode) and ADR-004 (wgpu renderer — this doc recommends ratatui). The "What to Build vs. What to Use" table gives outdated guidance. For the current stack decisions, see `docs/systems-design.md`, `docs/stack/investigation.md`, and `docs/decisions/`.
+
 # lain-shell — Reference Systems and Prior Art
 ### A guide for implementation agents and stack decisions
 > Pass this document alongside the main philosophy document. Together they give a complete picture.

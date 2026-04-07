@@ -99,21 +99,51 @@ Used for: PTY output → MOTOKO (continuous byte stream for pattern matching). H
 
 The hybrid avoids forcing everything into one pattern. Requests are direct calls. Observations are bus events. Security-critical streams are dedicated channels.
 
+### Event delivery model — two tiers
+
+The event system has two tiers with different delivery guarantees:
+
+**Tier 1: Mandatory events** — security, audit, lifecycle (session/pane/isolation created/destroyed, security escalations, config changes). Emitted via the `AuditSink` trait, which routes to MOTOKO — the single audit log writer. MOTOKO serializes writes, maintains the hash chain, and fsyncs. The audit write must complete before the mutating operation proceeds. If the write fails, the operation fails (fail-closed).
+
+**Tier 2: Observable events** — debug, informational, profile-filtered. Delivered via `tokio::broadcast`. Best-effort. A lagging receiver drops events and a warning is logged. Consumers must tolerate gaps.
+
+**Bridge:** Every mandatory event is also sent to the `tokio::broadcast` bus for convenience of non-security consumers (MAGGI, UI, plugins). The broadcast copy is not the source of truth — consumers that require completeness must read the audit log.
+
+**AuditSink trait** (defined in `lain-types/src/traits/audit.rs`):
+
+```rust
+#[async_trait]
+trait AuditSink: Send + Sync {
+    async fn emit(&self, event: MandatoryEvent) -> Result<()>;
+}
+```
+
+In dev mode: direct in-process call to MOTOKO's writer (serialized via mpsc channel). In production: RPC to MOTOKO's process over Unix socket. Either way, MOTOKO is the single writer — no concurrent file appends, no hash chain forks.
+
 ### Event emission discipline
 
-Every trait method that mutates state emits an event to the bus **from within its implementation**, not from the caller:
+Every trait method that mutates state emits events **from within its implementation**, not from the caller. **Write-before-mutate ordering:** audit the intent first, then mutate. If audit fails, nothing happens. If mutation fails after audit, the log shows an unmatched intent (useful diagnostic, not a bug).
 
 ```rust
 impl NaviApi for Navi {
     async fn create_session(&self, params: SessionParams) -> Result<SessionId> {
+        // 1. Audit the intent — if this fails, nothing happens (fail-closed)
+        self.audit_sink.emit(MandatoryEvent::SessionCreate {
+            params: params.clone(),
+        }).await?;
+
+        // 2. Mutate — audit already recorded the intent
         let id = self.session_manager.create(params.clone()).await?;
-        self.bus.emit(Event::SessionCreated { id, params }); // always emitted
+
+        // 3. Observable: best-effort, for UI/debug/MAGGI
+        let _ = self.bus.send(Event::SessionCreated { id, params });
+
         Ok(id)
     }
 }
 ```
 
-Callers cannot forget to emit events because they don't do it. The quantum itself guarantees event emission.
+Callers cannot forget to emit events because they don't do it. The quantum itself guarantees event emission. Mandatory events use `AuditSink` (durable, single-writer). Observable events use `tokio::broadcast` (lossy, best-effort).
 
 ---
 
@@ -502,6 +532,17 @@ The supervisor is part of the main `lain-shell` binary (alongside Core). It mana
 | WIRED | Show indicator. Attempt restart. | WIRED is optional. |
 | Core | Everything dies. User re-launches or systemd restarts. | Core is the process. |
 
+### Crash semantics — what survives
+
+Core owns PTY file descriptors, VTE state (`alacritty_terminal::Term`), and scrollback buffers. Navi owns session topology (sessions, tabs, panes) and persists it to TOML. This separation determines what survives each crash scenario:
+
+| Quantum dies | PTYs | VTE state | Session topology | Recovery |
+|---|---|---|---|---|
+| Core | Die (OS reclaims fds) | Lost | Navi has it (useless without PTYs) | Supervisor restarts Core. Navi re-requests PTYs for restorable panes. New processes, scrollback lost. |
+| Navi | Survive in Core | Survives in Core | Lost (recover from persisted TOML) | Supervisor restarts Navi. Navi reads TOML, queries Core for live PTYs via `CorePtyApi`, reconciles: matching PTYs restored, dead PTYs show "[exited]". |
+| MOTOKO | Survive | Survives | Survives | Tier 1 kernel enforcement (seccomp, namespaces) survives. Agent sessions paused per restart rules. Supervisor restarts MOTOKO. |
+| MAGGI | Survive | Survives | Survives | Agent UX unavailable. Terminal and sessions work normally. |
+
 ### Health monitoring
 
 Each quantum exposes a health endpoint (gRPC health check or heartbeat over socket). The supervisor polls at a configurable interval (default: 1 second). Three missed heartbeats = quantum considered dead.
@@ -521,7 +562,8 @@ lain-shell binary
 └── WIRED: Arc<dyn WiredApi> = InProcessImpl
 
 All trait calls: direct function calls
-Event bus: tokio broadcast channel
+Mandatory events: AuditSink → MOTOKO writer task (in-process), fsync by MOTOKO
+Observable events: tokio broadcast channel (best-effort)
 MOTOKO channel: tokio mpsc
 Single binary. Single process.
 ```
@@ -542,7 +584,8 @@ lain-maggi binary (separate process)
 lain-wired binary (separate process)
 
 Trait calls: gRPC over Unix sockets
-Event bus: pub/sub over Unix socket
+Mandatory events: AuditSink → MOTOKO writer (RPC over Unix socket), fsync by MOTOKO
+Observable events: pub/sub over Unix socket (best-effort)
 MOTOKO channel: dedicated Unix socket
 ```
 
@@ -614,9 +657,33 @@ These must hold at all times, regardless of deployment mode:
 5. **MOTOKO's dedicated channel is structurally isolated.** No other quantum can observe or interfere with the PTY→MOTOKO stream.
 6. **Policy authoring and enforcement are separated.** MOTOKO never writes policy files.
 7. **Cross-session MAGGI access is explicit.** No automatic context sharing between sessions.
-8. **The event bus cannot drop mandatory events.** Security and lifecycle events are always delivered.
+8. **Mandatory events are durably written to the audit log before the mutating operation completes.** The audit log is the source of truth for security and lifecycle events. The observable event bus (`tokio::broadcast`) is best-effort and may drop events for lagging receivers.
 9. **Active security config is outside agent reach.** The `.lain/` mirror pattern ensures agents cannot modify their own isolation config. See ADR-010.
 10. **Isolation level resolution is max().** When multiple policies apply (agent default, repo policy, directory policy), the highest restriction wins. Lowering requires explicit user confirmation and audit logging.
+
+---
+
+## Authority and Override Ladder
+
+When customization meets security, this precedence applies:
+
+```
+runtime invariant > team policy > workspace policy > user preference
+```
+
+| Setting | Who wins | Why |
+|---|---|---|
+| Disable MOTOKO Tier 1 entirely | Cannot. Runtime invariant. | Kernel enforcement (seccomp, namespaces) survives any config change. |
+| Set isolation to Level 0 for all agents | Team policy can forbid. User preference alone can lower to L0 with confirmation + audit. | Team policy wins over user preference. |
+| Lower isolation from L2 to L1 | User can, with confirmation + audit log. Team policy can block. | Lowering is allowed but audited. |
+| Disable audit logging | Cannot. Runtime invariant. | Tamper-evidence is structural. |
+| Change keybinding for pane split | User preference. | No security implication — fully customizable. |
+| Set custom MAGGI system prompt | User preference. | No security implication. |
+| Override workspace isolation minimum | Cannot without user confirmation. Team policy is ceiling. | `max()` resolution from invariant #10. |
+
+**What is NOT an invariant** (freely customizable): visual layer (themes, fonts, colors, transparency), keybindings, session defaults, MAGGI model/prompt/cost limits, observable event subscriptions, layout presets.
+
+This resolves the tension between philosophy principle #7 ("every ceiling should be removable") and the system invariants: ceilings imposed by user preference are removable. Ceilings imposed by runtime invariants or team policy are not — they are structural, not configurable.
 
 ---
 
@@ -636,7 +703,7 @@ User: "open Claude Code in a new pane"
 │     constructs mount view, spawns host proxy, returns IsolationHandle
 ├─5─▶ Core.pty_manager: create_pty(inside isolation)
 ├─6─▶ Navi: registers pane with IsolationHandle, updates layout
-├─7─▶ Events: PaneCreated, IsolationCreated, AgentSpawned → bus
+├─7─▶ Events: mandatory (PaneCreated, IsolationCreated, AgentSpawned) → AuditSink; observable → bus
 ├─8─▶ MOTOKO: observes events, begins monitoring (adapts to isolation level)
 ├─9─▶ Core.renderer: allocates render surface for new pane
 └─10─▶ Agent process starts, PTY output flows to renderer + MOTOKO
@@ -645,14 +712,15 @@ User: "open Claude Code in a new pane"
 ### Security event escalation
 
 ```
-Agent attempts to read ~/.ssh/id_rsa
+Agent attempts to access ~/.ssh/id_rsa
 │
-├─ Tier 1 (kernel): seccomp blocks the read syscall → SILENT
-│  Event logged to audit. Agent sees EACCES. Session continues.
+├─ Level 1 (mount namespace): ~/.ssh is not mounted → ENOENT
+│  Agent sees "No such file or directory". Silent. Zero overhead.
+│  This is the primary protection for path-level file access.
 │
-├─ OR if not caught by seccomp:
+├─ If sensitive data appears in PTY output via other paths:
 ├─ Tier 1 (pattern matching): Aho-Corasick detects SSH key pattern in output
-│  Event emitted to bus.
+│  Event written to audit log (mandatory).
 │
 ├─ Tier 2 (statistical): flags as ANOMALY or CRITICAL
 │  ├─ ANOMALY: non-blocking indicator, queued for postmortem

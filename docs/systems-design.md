@@ -98,47 +98,171 @@ Ghostty is the performance benchmark for rendering. Measure against it continuou
 
 ### Error handling
 
-> **TODO:** Define error strategy. `thiserror` for library errors, `anyhow` for application? Or a custom error hierarchy?
+**`thiserror` everywhere. `LainError` in `lain-types`. No `anyhow` in libraries.**
+
+All public trait methods that cross crate boundaries return `Result<T, LainError>`. `LainError` is defined in `lain-types/src/error.rs`:
+
+```rust
+#[derive(Debug, thiserror::Error, serde::Serialize, serde::Deserialize, Clone)]
+pub enum LainError {
+    #[error("not found: {resource} {id}")]
+    NotFound { resource: String, id: String },
+
+    #[error("permission denied: {reason}")]
+    PermissionDenied { reason: String },
+
+    #[error("invalid config: {detail}")]
+    InvalidConfig { detail: String },
+
+    #[error("isolation error: {detail}")]
+    IsolationError { detail: String },
+
+    #[error("pty error: {detail}")]
+    PtyError { detail: String },
+
+    #[error("bus error: {detail}")]
+    BusError { detail: String },
+
+    #[error("internal: {message}")]
+    Internal { message: String },
+}
+```
+
+**Rules:**
+
+1. `LainError` derives `serde::Serialize + serde::Deserialize` — it must round-trip through gRPC without information loss.
+2. Internal crate errors (`std::io::Error`, `wgpu::Error`, `toml::de::Error`) are converted to `LainError` at the crate boundary via `impl From<InternalError> for LainError`. The conversion includes enough context to be actionable (resource name, ID, reason).
+3. `anyhow` is NOT used in library crates. It is permitted only in `src/main.rs` (the binary) for top-level error reporting.
+4. Every `LainError` variant carries enough context to be actionable without a stack trace.
+
+**Why:**
+- `anyhow::Error` is not serializable — breaks gRPC transport.
+- `anyhow::Error` erases the type — callers can't match on variants.
+- MAGGI needs to match error types to provide useful explanations.
+- MOTOKO needs to distinguish security errors from operational errors.
+- THE WIRED needs to map errors to appropriate gRPC status codes (`NotFound` → `NOT_FOUND`, `PermissionDenied` → `PERMISSION_DENIED`).
 
 ### Logging and tracing
 
-> **TODO:** `tracing` crate is the standard. Define log levels, structured fields, and how tracing integrates with MOTOKO's audit log (they are separate — tracing is for debugging, audit is for security).
+**`tracing` crate for operational observability. Separate from MOTOKO's audit log.**
+
+These are two distinct systems:
+- **`tracing`** = debugging and operational observability. Goes to stderr or log file. Developers read it. Configurable, filterable, can be noisy.
+- **MOTOKO audit log** = security record. Append-only JSONL. Tamper-evident (hash chain). MOTOKO reads it. Cannot be reconfigured by agents.
+
+They log overlapping events (e.g., session creation appears in both), but they serve different audiences and have different guarantees.
+
+**Log levels:**
+- `ERROR` — broken invariant, unrecoverable failure
+- `WARN` — recoverable issue, degraded operation
+- `INFO` — lifecycle events (session created, pane split, agent spawned)
+- `DEBUG` — internal state changes, trait call details
+- `TRACE` — byte-level (PTY I/O, event bus traffic)
+
+**Structured spans:** every async operation creates a `tracing::Span` with relevant IDs (`session_id`, `pane_id`, `pty_id`). This enables filtering logs by session or pane.
 
 ### Concurrency model
 
 Tokio async for I/O-bound work (PTY reads, network, API calls). OS threads for CPU-bound work (rendering, pattern matching). The render loop should not compete with async tasks for CPU time.
 
+### Transport discipline
+
+Dev mode (in-process) and production mode (gRPC over Unix sockets) use identical trait APIs. This means:
+
+1. **All cross-boundary types derive `serde::Serialize + serde::Deserialize`.** Every type in a public trait method signature (parameters and return types) must round-trip through JSON/protobuf without loss.
+2. **IDs are newtypes over serializable primitives.** `SessionId`, `PaneId`, `TabId`, `PtyId`, `AttachId`, `IsolationHandle` — all newtypes over `u64` or `uuid::Uuid`. They derive `Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash`.
+3. **No OS handles in public APIs.** Raw file descriptors, channel senders, and process handles are crate-internal. Public APIs use serializable IDs that the owning crate maps to internal handles.
+4. **Ordering assumptions are documented.** Every trait method that has ordering dependencies states them in doc comments: "Precondition: session must exist" or "Safe to call concurrently with X." `tokio::mpsc` guarantees FIFO; gRPC does not. Code must not silently depend on in-process ordering.
+
+The dev-mode implementation is "gRPC without the wire" — same types, same error variants, same ordering constraints. The only difference is transport.
+
 ### Build system
 
-Cargo workspaces. One workspace, multiple crates:
+Cargo workspaces. One workspace, seven member crates:
 
-> **TODO:** Define crate boundaries once architecture solidifies. Likely:
-> - `lain-core` (PTY, VTE, renderer, config, CLI)
-> - `lain-navi` (multiplexer, sessions)
-> - `lain-motoko` (security, audit)
-> - `lain-maggi` (agent)
-> - `lain-wired` (gRPC, MCP, socket)
-> - `lain-shell` (binary, composes all)
+| Crate | Owns | Notes |
+|---|---|---|
+| `lain-types` | Shared IDs, events, errors, command model, inter-quantum API traits | Every quantum crate depends on this. Internal module structure for future extractability. |
+| `lain-core` | PTY, VTE, renderer, config, isolation manager, command router, event bus | Heaviest crate. Owns `alacritty_terminal`, `wgpu`, `portable-pty`. Implements traits from `lain-types`. |
+| `lain-navi` | Sessions, tabs, panes, layout, attach/detach, persistence | Uses Core API traits from `lain-types`. Does NOT depend on `lain-core`. |
+| `lain-motoko` | Security policy, audit log writer, scanners, rule engine | Single writer to audit log. Implements `AuditSink`. Monitors PTY streams. |
+| `lain-maggi` | Operator agent, tools, RAG, model backend | Uses `lancedb`, `tantivy`. Interacts with Navi/Core via traits from `lain-types`. |
+| `lain-wired` | MCP/gRPC/Unix socket protocol translation | Uses `tonic`, MCP SDK. Does NOT depend on `lain-core`. |
+| `lain-shell` | Binary entry point, supervisor, composition | Composes all crates via `Arc<dyn Trait>`. The only crate that depends on everything. |
+
+**`lain-types` internal module structure:**
+
+```
+lain-types/src/
+├── lib.rs        pub mod declarations
+├── ids.rs        SessionId, PaneId, TabId, PtyId, AttachId, IsolationHandle, etc.
+├── events.rs     Event, MandatoryEvent, EventMetadata
+├── command.rs    LainCommand, AuthContext, Params, LainResponse
+├── error.rs      LainError hierarchy
+└── traits/
+    ├── mod.rs
+    ├── core.rs   CorePtyApi, CoreRenderApi, CoreIsolationApi, CoreConfigApi, CoreBlockApi, CoreRouterApi
+    ├── navi.rs   NaviApi
+    ├── motoko.rs MotokoApi
+    ├── maggi.rs  MaggiApi
+    ├── wired.rs  WiredApi
+    └── audit.rs  AuditSink
+```
+
+The `traits/` module contains all inter-quantum API trait definitions. This means no quantum crate needs to depend on another — they all import traits from `lain-types`. The binary composes implementations via `Arc<dyn Trait>`.
+
+If any module exceeds ~500 lines, evaluate extraction into its own crate. The module boundaries make this cheap.
+
+**Dependency graph:**
+
+```
+lain-types ←── lain-core
+     ↑
+     ├── lain-navi
+     ├── lain-motoko
+     ├── lain-maggi
+     └── lain-wired
+              │
+       lain-shell (binary, depends on all)
+```
+
+Rules:
+- All quantum crates depend on `lain-types`. No exceptions.
+- **No quantum crate depends on any other quantum crate.** Traits are in `lain-types`; the binary wires implementations.
+- No circular dependencies.
 
 ### Testing strategy
 
-> **TODO:** Define. Unit tests per crate. Integration tests for cross-quantum interactions. Property-based tests for VTE parsing. Benchmark suite for performance targets. Security tests for MOTOKO (attempt forbidden operations, verify they're blocked).
+- **Unit tests**: per crate (`cargo test -p lain-core`). Each crate owns its unit tests.
+- **Integration tests**: top-level `tests/` directory for cross-crate interactions.
+- **Property-based tests**: `proptest` for VTE parsing (random byte sequences → no panics, no memory corruption).
+- **Security tests**: first-class, not afterthoughts. Attempt forbidden operations under each isolation level, verify they fail. Test seccomp profiles, mount namespace visibility, host proxy allowlist enforcement.
+- **Terminal acceptance matrix**: vttest baseline, OSC 133 prompt detection, bracketed paste, alternate screen, TUI apps under multi-client attach. Defined incrementally as integration test suite grows.
+- **Performance benchmarks**: `criterion` for MOTOKO Tier 1 latency (<10μs), render latency (parity with Ghostty), startup time (<100ms).
 
 ---
 
 ## Repository Structure
 
-> **TODO:** Define once crate boundaries are settled. Likely:
-> ```
-> lain-shell/
-> ├── crates/
-> │   ├── core/
-> │   ├── navi/
-> │   ├── motoko/
-> │   ├── maggi/
-> │   └── wired/
-> ├── src/           (binary entry point)
-> ├── docs/
-> ├── .lain/         (example/default config)
-> └── tests/         (integration)
-> ```
+```
+lain-shell/
+├── Cargo.toml              workspace root
+├── crates/
+│   ├── lain-types/         shared IDs, events, errors, command model
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── ids.rs
+│   │       ├── events.rs
+│   │       ├── command.rs
+│   │       └── error.rs
+│   ├── lain-core/          PTY, VTE, renderer, config, isolation, router, bus
+│   ├── lain-navi/          sessions, tabs, panes, layout, attach/detach
+│   ├── lain-motoko/        security policy, audit log, scanners, rules
+│   ├── lain-maggi/         operator agent, tools, RAG, model backend
+│   └── lain-wired/         MCP/gRPC/Unix socket translation
+├── src/
+│   └── main.rs             binary entry point, supervisor, composition
+├── docs/                   architecture, design, decisions, philosophy
+├── tests/                  cross-crate integration tests
+└── .lain/                  example/default config
+```

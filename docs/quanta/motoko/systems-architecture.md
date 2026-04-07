@@ -115,6 +115,14 @@ MOTOKO subscribes to:
 
 These are profile-filtered but mandatory events bypass the filter.
 
+### Audit log — single writer
+
+MOTOKO is the **sole writer** to the audit log (append-only JSONL with hash chain). Other quanta emit mandatory events via the `AuditSink` trait (defined in `lain-types`), which routes to MOTOKO's writer. MOTOKO serializes all writes, computes hash chain links, and fsyncs. No other process appends to the audit file directly.
+
+In dev mode, `AuditSink` is an in-process call (serialized via mpsc channel to MOTOKO's writer task). In production, it's an RPC to MOTOKO's process over Unix socket. Either way, MOTOKO owns the file handle and the chain head.
+
+If MOTOKO is unreachable, `AuditSink::emit()` returns an error and the calling quantum's mutating operation fails (fail-closed). This is by design — no agent mutation can occur without audit.
+
 ### Policy files
 
 MOTOKO reads `policies.toml` and `permissions.toml` from the **safe mirror** (`~/.local/state/lain-shell/workspaces/<project-hash>/`), NOT from the repo's `.lain/` directory. See ADR-010. It compiles rules at startup and recompiles when config change events arrive (triggered by `lain config sync`).

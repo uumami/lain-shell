@@ -90,7 +90,7 @@ This means:
 - **Plugin layer** — the entire plugin system exists to extend customization beyond what the core ships
 - **Distribution layer** — fork config, maintain dotfiles, share profiles with teams, apply named configurations in one command
 
-The philosophy: **lain-shell bends to the user.** Not the other way around.
+The philosophy: **lain-shell bends to the user.** Not the other way around. For how customization interacts with security invariants and team policy, see the Authority and Override Ladder in `systems-architecture.md`.
 
 ### 8. Quality over adoption
 
@@ -429,7 +429,7 @@ NERV becomes a trusted party. The document acknowledges that explicitly.
 ```
 .lain/
 ├── permissions.toml     <- security contract (commit this)
-├── workspace.toml       <- layout and agent configuration (commit this)
+├── config.toml       <- layout and agent configuration (commit this)
 ├── policies.toml        <- behavioral rules (commit this)
 ├── plugins.lock         <- pinned plugin versions (commit this)
 ├── agents/              <- conversation history (user decides)
