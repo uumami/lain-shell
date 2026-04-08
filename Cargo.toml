@@ -1,0 +1,26 @@
+[workspace]
+members = [
+    "crates/lain-types",
+    "crates/lain-core",
+    "crates/lain-navi",
+    "crates/lain-motoko",
+    "crates/lain-maggi",
+    "crates/lain-wired",
+]
+resolver = "2"
+
+[package]
+name = "lain-shell"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lain-types = { path = "crates/lain-types" }
+lain-core = { path = "crates/lain-core" }
+lain-navi = { path = "crates/lain-navi" }
+lain-motoko = { path = "crates/lain-motoko" }
+lain-maggi = { path = "crates/lain-maggi" }
+lain-wired = { path = "crates/lain-wired" }
+wgpu = "29"
+winit = "0.30"
+pollster = "0.4"

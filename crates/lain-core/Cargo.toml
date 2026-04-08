@@ -1,0 +1,16 @@
+[package]
+name = "lain-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lain-types = { path = "../lain-types" }
+alacritty_terminal = "0.26"
+wgpu = "29"
+winit = "0.30"
+cosmic-text = "0.18"
+glyphon = { git = "https://github.com/grovesNL/glyphon", branch = "main" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+log = "0.4"
+parking_lot = "0.12"
+bytemuck = { version = "1", features = ["derive"] }
