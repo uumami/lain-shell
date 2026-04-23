@@ -184,7 +184,14 @@ impl RectRenderer {
         }
     }
 
-    pub fn prepare(&mut self, device: &Device, queue: &Queue, width: u32, height: u32, rects: &[RectInstance]) {
+    pub fn prepare(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        width: u32,
+        height: u32,
+        rects: &[RectInstance],
+    ) {
         queue.write_buffer(
             &self.uniform_buffer,
             0,

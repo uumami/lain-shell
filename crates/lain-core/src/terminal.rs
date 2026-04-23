@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
@@ -42,30 +43,69 @@ impl JsonLessListener {
 
 impl EventListener for JsonLessListener {
     fn send_event(&self, event: Event) {
-        match event {
-            Event::Wakeup => {
-                let _ = self.proxy.send_event(TerminalEvent::Wakeup);
-            }
-            Event::Exit | Event::ChildExit(_) => {
-                let _ = self.proxy.send_event(TerminalEvent::Exit);
-            }
-            _ => {}
-        }
+        let terminal_event = match event {
+            Event::Wakeup => TerminalEvent::Wakeup,
+            Event::Exit | Event::ChildExit(_) => TerminalEvent::Exit,
+            Event::ClipboardStore(_, text) => TerminalEvent::ClipboardStore(text),
+            Event::ClipboardLoad(_, cb) => TerminalEvent::ClipboardLoad(cb),
+            Event::PtyWrite(s) => TerminalEvent::PtyWrite(s),
+            Event::Title(s) => TerminalEvent::Title(s),
+            Event::TextAreaSizeRequest(cb) => TerminalEvent::TextAreaSizeRequest(cb),
+            _ => return,
+        };
+        let _ = self.proxy.send_event(terminal_event);
     }
 }
 
 /// Events sent from the terminal I/O thread to the winit event loop.
-#[derive(Debug, Clone)]
 pub enum TerminalEvent {
     Wakeup,
     Exit,
+    ClipboardStore(String),
+    ClipboardLoad(Arc<dyn Fn(&str) -> String + Sync + Send + 'static>),
+    PtyWrite(String),
+    Title(String),
+    TextAreaSizeRequest(Arc<dyn Fn(WindowSize) -> String + Sync + Send + 'static>),
+}
+
+impl Clone for TerminalEvent {
+    fn clone(&self) -> Self {
+        match self {
+            TerminalEvent::Wakeup => TerminalEvent::Wakeup,
+            TerminalEvent::Exit => TerminalEvent::Exit,
+            TerminalEvent::ClipboardStore(s) => TerminalEvent::ClipboardStore(s.clone()),
+            TerminalEvent::ClipboardLoad(cb) => TerminalEvent::ClipboardLoad(cb.clone()),
+            TerminalEvent::PtyWrite(s) => TerminalEvent::PtyWrite(s.clone()),
+            TerminalEvent::Title(s) => TerminalEvent::Title(s.clone()),
+            TerminalEvent::TextAreaSizeRequest(cb) => {
+                TerminalEvent::TextAreaSizeRequest(cb.clone())
+            }
+        }
+    }
+}
+
+impl fmt::Debug for TerminalEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TerminalEvent::Wakeup => write!(f, "Wakeup"),
+            TerminalEvent::Exit => write!(f, "Exit"),
+            TerminalEvent::ClipboardStore(s) => write!(f, "ClipboardStore({s:?})"),
+            TerminalEvent::ClipboardLoad(_) => write!(f, "ClipboardLoad(<fn>)"),
+            TerminalEvent::PtyWrite(s) => write!(f, "PtyWrite({s:?})"),
+            TerminalEvent::Title(s) => write!(f, "Title({s:?})"),
+            TerminalEvent::TextAreaSizeRequest(_) => write!(f, "TextAreaSizeRequest(<fn>)"),
+        }
+    }
 }
 
 /// Holds the terminal state and the channel to send input to the PTY.
 pub struct Terminal {
     pub term: Arc<FairMutex<Term<JsonLessListener>>>,
     pub sender: EventLoopSender,
-    _io_handle: JoinHandle<(EventLoop<tty::Pty, JsonLessListener>, alacritty_terminal::event_loop::State)>,
+    _io_handle: JoinHandle<(
+        EventLoop<tty::Pty, JsonLessListener>,
+        alacritty_terminal::event_loop::State,
+    )>,
 }
 
 impl Terminal {

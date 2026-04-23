@@ -7,6 +7,19 @@
 
 ---
 
+## Untested But Well-Used
+
+These are integration patterns we are willing to ship because they align with
+established platform behavior, but we have not yet validated them across the
+full target environment matrix.
+
+### Direct X11 `_NET_WM_ICON` writes
+
+- Why we use it: `winit` currently exposes only a single-size window icon API, while X11 `_NET_WM_ICON` is designed to carry multiple sizes in one property.
+- Verified: the application generates canonical 16x16, 32x32, 48x48, and 128x128 icon buffers and writes `_NET_WM_ICON` directly on X11 windows using the standard cardinal format.
+- Unverified: compositor-specific rendering outcomes on Pop!_OS GNOME 42, including whether Mutter SSD titlebars visibly render the icon.
+- Status: protocol-correct path intended; environment-specific titlebar behavior remains unverified until local testing or user reports confirm it.
+
 ## Platform-Wide
 
 1. **First launch UX.** What does the configuration moment feel like? How does MAGGI participate if present? How does the CLI flow work without a model?

@@ -24,3 +24,14 @@ lain-wired = { path = "crates/lain-wired" }
 wgpu = "29"
 winit = "0.30"
 pollster = "0.4"
+cosmic-text = "0.18"
+log = "0.4"
+env_logger = "0.11"
+alacritty_terminal = "0.26"
+arboard = "3"
+x11rb = "0.13"
+
+[profile.dev]
+# opt-level 1 gives basic optimizations — dramatically faster rendering and PTY
+# throughput vs. the default 0, while keeping incremental recompile times low.
+opt-level = 1

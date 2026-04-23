@@ -14,3 +14,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 log = "0.4"
 parking_lot = "0.12"
 bytemuck = { version = "1", features = ["derive"] }
+softbuffer = "0.4"
+pollster = "0.4"
+arboard = "3"
