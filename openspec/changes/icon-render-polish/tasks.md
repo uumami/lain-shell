@@ -31,8 +31,8 @@
 
 - [x] 6.1 `xprop _NET_WM_ICON` shows four sizes: 128×128, 48×48, 32×32, 16×16
 - [x] 6.2 On the target Pop!_OS GNOME X11 environment, record whether Mutter SSD title bar shows a visible icon, and do not use this as the sole correctness check
-- [ ] 6.3 GNOME Alt+Tab shows the λ_ icon for lain-shell
+- [x] 6.3 GNOME Alt+Tab shows the λ_ icon for lain-shell
 - [x] 6.4 `~/.local/share/applications/lain-shell.desktop` contains `StartupWMClass=lain-shell`
 - [x] 6.5 GPU renderer log line shows present mode at startup
-- [ ] 6.6 Resize the window rapidly: no burst of frames; CPU and GPU both feel smooth
-- [ ] 6.7 `cat /etc/passwd` in rapid succession: no stutter or tearing visible
+- [x] 6.6 Resize the window rapidly: no burst of frames; CPU and GPU both feel smooth
+- [x] 6.7 `cat /etc/passwd` in rapid succession: no stutter or tearing visible

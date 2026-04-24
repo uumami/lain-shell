@@ -46,9 +46,9 @@
 
 - [x] 9.1 `cargo check` passes with no warnings
 - [x] 9.2 `cargo build` succeeds (selection highlight rendering added to cell_grid.rs)
-- [ ] 9.3 Test scrollback: run `ls -la /usr/bin`, scroll up with wheel and PageUp/PageDown, verify history visible
-- [ ] 9.4 Test clipboard: select text with mouse, verify middle-click pastes it; press Ctrl+Shift+C, paste in another app
-- [ ] 9.5 Test Ctrl+Shift+V: copy text in another app, press Ctrl+Shift+V in lain-shell, verify text appears
-- [ ] 9.6 Test OSC52: open vim, yank a word with `"+yiw`, verify text available in system clipboard
-- [ ] 9.7 Test mouse reporting: run `htop`, verify mouse clicks work; run `fzf`, verify mouse selection works
-- [ ] 9.8 Test window title: run `echo -ne "\033]0;test title\007"`, verify window title bar updates
+- [x] 9.3 Test scrollback: run `ls -la /usr/bin`, scroll up with wheel and PageUp/PageDown, verify history visible
+- [x] 9.4 Test clipboard: select text with mouse, verify middle-click pastes it; press Ctrl+Shift+C, paste in another app
+- [x] 9.5 Test Ctrl+Shift+V: copy text in another app, press Ctrl+Shift+V in lain-shell, verify text appears
+- [x] 9.6 Test OSC52: open vim, yank a word with `"+yiw`, verify text available in system clipboard
+- [x] 9.7 Test mouse reporting: run `htop`, verify mouse clicks work; run `fzf`, verify mouse selection works
+- [x] 9.8 Test window title: run `echo -ne "\033]0;test title\007"`, verify window title bar updates

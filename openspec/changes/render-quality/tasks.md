@@ -59,11 +59,11 @@
 
 - [x] 10.1 `cargo check` passes with no warnings
 - [x] 10.2 `cargo build` succeeds
-- [ ] 10.3 Run with GPU: cursor blinks at ~500ms interval
-- [ ] 10.4 Run with CPU: cursor blinks at ~500ms interval
-- [ ] 10.5 Run `cat /etc/passwd` rapidly: observe smooth output with no frame bursts
-- [ ] 10.6 Type in the shell: confirm keystrokes feel immediate (no perceivable lag)
-- [ ] 10.7 Run `htop`: confirm box-drawing characters are aligned with no gaps
-- [ ] 10.8 Run nvim with a colorscheme using italic comments: confirm italics render
-- [ ] 10.9 Run a program that sets underline (e.g., `man ls`): confirm underline appears
+- [x] 10.3 Run with GPU: cursor blinks at ~500ms interval
+- [x] 10.4 Run with CPU: cursor blinks at ~500ms interval
+- [x] 10.5 Run `cat /etc/passwd` rapidly: observe smooth output with no frame bursts
+- [x] 10.6 Type in the shell: confirm keystrokes feel immediate (no perceivable lag)
+- [x] 10.7 Run `htop`: confirm box-drawing characters are aligned with no gaps
+- [x] 10.8 Run nvim with a colorscheme using italic comments: confirm italics render
+- [x] 10.9 Run a program that sets underline (e.g., `man ls`): confirm underline appears
 - [ ] 10.10 Move window to a different monitor (if DPI differs): confirm text stays sharp
