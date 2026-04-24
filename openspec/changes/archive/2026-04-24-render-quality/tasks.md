@@ -66,4 +66,4 @@
 - [x] 10.7 Run `htop`: confirm box-drawing characters are aligned with no gaps
 - [x] 10.8 Run nvim with a colorscheme using italic comments: confirm italics render
 - [x] 10.9 Run a program that sets underline (e.g., `man ls`): confirm underline appears
-- [ ] 10.10 Move window to a different monitor (if DPI differs): confirm text stays sharp
+- [x] 10.10 Move window to a different monitor (if DPI differs): confirm text stays sharp

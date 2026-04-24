@@ -1,5 +1,6 @@
-## ADDED Requirements
-
+## Purpose
+Define how lain-shell renders terminal cells through the wgpu-backed renderer.
+## Requirements
 ### Requirement: Cell grid renders via wgpu
 lain-core SHALL render the terminal cell grid to a wgpu surface. Each cell's character SHALL be shaped via cosmic-text, rasterized into a GPU texture atlas (managed by glyphon), and drawn as an instanced quad.
 
@@ -50,3 +51,22 @@ When the window resizes, the wgpu surface SHALL be reconfigured, the cell grid d
 #### Scenario: Resize produces correct layout
 - **WHEN** the window is resized
 - **THEN** the number of visible columns and rows adjusts to fill the new window size with correctly sized cells
+
+### Requirement: Surface uses vsync presentation mode
+The wgpu surface SHALL be configured with `PresentMode::AutoVsync` instead of `PresentMode::AutoNoVsync`. Frame presentation SHALL be synchronized to the display refresh cycle to eliminate tearing and provide consistent frame timing.
+
+#### Scenario: Surface configured at initialization
+- **WHEN** `GpuRenderer::new()` runs
+- **THEN** `SurfaceConfiguration::present_mode` is `PresentMode::AutoVsync`
+
+#### Scenario: Surface reconfigured after resize
+- **WHEN** `GpuRenderer::resize()` is called
+- **THEN** the reconfigured surface retains `PresentMode::AutoVsync`
+
+### Requirement: Cell dimensions come from font-metrics measurement
+The `GlyphonRenderer` SHALL NOT compute `cell_width` as `font_size * 0.6`. Instead, `cell_width` SHALL be set from the measured font advance as defined in the `font-metrics` capability.
+
+#### Scenario: Cell width at initialization
+- **WHEN** `GlyphonRenderer::new()` is called
+- **THEN** `cell_width` is the measured advance of 'M' at the physical font size, rounded to integer pixels
+
