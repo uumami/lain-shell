@@ -15,7 +15,7 @@ lain_shell_git_prompt() {
   printf '  %s(%s)%s' "%{$fg_bold[red]%}" "$branch" "%{$reset_color%}"
 }
 
-PROMPT="%{$fg[cyan]%}%c%{$reset_color%}\$(lain_shell_git_prompt):%(?:%{$fg_bold[green]%}λ_%{$reset_color%}:%{$fg_bold[red]%}λ_%{$reset_color%}) "
+PROMPT="%{$fg[cyan]%}%c%{$reset_color%}\$(lain_shell_git_prompt)%(?.. %{$fg_bold[red]%}!%{$reset_color%}):%{$fg_bold[green]%}λ_%{$reset_color%} "
 RPROMPT=""
 "#;
 
