@@ -67,6 +67,11 @@ impl Terminal {
         }
     }
 
+    pub fn resize(&mut self, cols: usize, lines: usize) {
+        self.dims = Dims { cols: cols.max(1), lines: lines.max(1) };
+        self.term.resize(self.dims);
+    }
+
     /// Bytes alacritty wants written back to the PTY (replies). Drains them.
     pub fn take_pty_writes(&mut self) -> Vec<u8> {
         std::mem::take(&mut *self.writes.lock().unwrap())
@@ -125,5 +130,24 @@ mod tests {
         let mut t = Terminal::new(10, 3);
         assert!(!t.feed(b"").full);
         assert!(t.feed(b"x").full);
+    }
+
+    #[test]
+    fn text_wraps_at_column_width() {
+        let mut t = Terminal::new(4, 3); // 4 columns
+        t.feed(b"abcdef"); // 6 chars -> wraps after 4
+        let s = t.snapshot();
+        assert_eq!(s.row(0), "abcd");
+        assert_eq!(s.row(1), "ef");
+    }
+
+    #[test]
+    fn resize_changes_width() {
+        let mut t = Terminal::new(4, 3);
+        t.resize(8, 3);
+        t.feed(b"abcdef");
+        let s = t.snapshot();
+        assert_eq!(s.cols, 8);
+        assert_eq!(s.row(0), "abcdef"); // now fits on one line
     }
 }
