@@ -75,7 +75,49 @@ impl CpuRenderer {
 impl Renderer for CpuRenderer {
     fn render(&mut self, grid: &GridSnapshot) -> PixelBuffer {
         let (width, height) = self.canvas_size(grid);
-        PixelBuffer::filled(width, height, self.bg)
+        let mut pb = PixelBuffer::filled(width, height, self.bg);
+
+        // Build the visible grid as monospace text (one row per line).
+        let mut text = String::with_capacity(grid.cells.len() + grid.lines);
+        for l in 0..grid.lines {
+            for c in 0..grid.cols {
+                text.push(grid.cells[l * grid.cols + c]);
+            }
+            text.push('\n');
+        }
+
+        let mut buffer = Buffer::new(&mut self.font_system, self.metrics);
+        buffer.set_size(&mut self.font_system, Some(width as f32), Some(height as f32));
+        buffer.set_text(
+            &mut self.font_system,
+            &text,
+            Attrs::new().family(Family::Monospace),
+            Shaping::Basic,
+        );
+        buffer.shape_until_scroll(&mut self.font_system, false);
+
+        let fg = self.fg;
+        let (w, h) = (width as i32, height as i32);
+        // draw() rasterizes each glyph via swash and calls us per painted pixel.
+        // `color` carries the glyph's coverage in its alpha channel.
+        buffer.draw(&mut self.font_system, &mut self.swash, fg, |x, y, _gw, _gh, color| {
+            if x < 0 || y < 0 || x >= w || y >= h {
+                return;
+            }
+            let a = color.a() as u32;
+            if a == 0 {
+                return;
+            }
+            let idx = (y as u32 * width + x as u32) as usize;
+            let dst = pb.data[idx];
+            let blend = |s: u32, d: u32| (s * a + d * (255 - a)) / 255;
+            let r = blend(color.r() as u32, (dst >> 16) & 0xff);
+            let g = blend(color.g() as u32, (dst >> 8) & 0xff);
+            let b = blend(color.b() as u32, dst & 0xff);
+            pb.data[idx] = (r << 16) | (g << 8) | b;
+        });
+
+        pb
     }
 }
 
@@ -99,5 +141,26 @@ mod tests {
         assert_eq!(pb.width, 10 * r.cell_w);
         assert_eq!(pb.height, 3 * r.cell_h);
         assert!(pb.data.iter().all(|&p| p == 0x0d0d0f), "blank grid must be all bg");
+    }
+
+    #[test]
+    fn glyph_paints_pixels_in_its_cell_only() {
+        let mut r = CpuRenderer::new(14.0);
+        // 'X' in the top-left cell; everything else blank.
+        let grid = snapshot(10, 3, &[(0, 'X')]);
+        let pb = r.render(&grid);
+        // Some non-bg pixels exist (the glyph painted).
+        assert!(pb.data.iter().any(|&p| p != 0x0d0d0f), "glyph should paint pixels");
+        // The bottom-right pixel (far from the glyph) stays background.
+        assert_eq!(pb.at(pb.width - 1, pb.height - 1), 0x0d0d0f);
+    }
+
+    #[test]
+    fn render_is_deterministic() {
+        let mut r = CpuRenderer::new(14.0);
+        let grid = snapshot(8, 2, &[(0, 'h'), (1, 'i')]);
+        let a = r.render(&grid);
+        let b = r.render(&grid);
+        assert_eq!(a.data, b.data, "same grid must rasterize identically");
     }
 }
