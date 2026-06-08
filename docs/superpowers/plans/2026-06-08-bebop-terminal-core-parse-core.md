@@ -80,6 +80,11 @@ publish.workspace = true
 lain-types = { path = "../lain-types" }
 alacritty_terminal = "0.24"
 portable-pty = "0.8"
+# Not used directly: forces rustix's `std` feature on. alacritty_terminal's
+# tty/unix.rs needs `From<Errno> for io::Error` (rustix `std` feature). In this
+# minimal graph nothing else enables it via feature unification, so the build
+# fails without this line (E0277 in alacritty's tty/unix.rs). Verified required.
+rustix = { version = "0.38", features = ["std"] }
 ```
 
 - [ ] **Step 4: Write placeholder lib roots**
