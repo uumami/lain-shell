@@ -27,6 +27,12 @@ impl LocalPty {
     }
 
     /// The blocking reader, to be moved into a ReaderPump thread.
+    ///
+    /// MUTUALLY EXCLUSIVE with `ByteStream::read`: this hands out an independent
+    /// reader fd over the same PTY master, so using both at once would split the
+    /// output stream nondeterministically. A consumer picks one path — the pump
+    /// (this) OR `ByteStream::read` — never both. Plan 2 makes this exclusivity
+    /// structural when it wires the read side into the event loop.
     pub fn take_reader(&mut self) -> Box<dyn Read + Send> {
         self.master.try_clone_reader().expect("clone reader")
     }
@@ -43,7 +49,7 @@ impl ByteStream for LocalPty {
     fn resize(&mut self, cols: u16, rows: u16) -> std::io::Result<()> {
         self.master
             .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 }
 
