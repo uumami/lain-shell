@@ -49,6 +49,7 @@ The improvement over the original is turning vague goals into **testable accepta
 | SC-8 | Legible security state | At any moment the user can see, per pane, what cage it is in, what network it has, and what it is allowed to do. |
 | SC-9 | Personalizable & durable | Behavior, visuals, and keybindings are configurable via human-readable, version-controlled files that survive for years. |
 | SC-10 | Agents first-class, optional | Agents get typed sessions, permission scopes, lifecycle events, and cost tracking — but nothing core depends on them. |
+| SC-11 | Installable anywhere | lain-shell installs and runs on any modern Linux, on the user's terms: a native package on the major families (`apt`/`dnf`/Arch/Alpine) **and** a single distro-agnostic installer for everything else. No distro hardcoded; distro/arch/libc detected, never assumed. Base install is small; the hardware-gated sealed microVM stack is fetched only when used. Tiers degrade honestly: a non-microVM fallback is never labeled `sealed`. Detail in `2026-06-08-distribution-design.md`. |
 
 These criteria are the contract. Every later cycle is judged against them.
 
@@ -340,6 +341,7 @@ its codename.
 | Agents first-class but optional | **Keep** | Section 6 |
 | UX/UI | **New / improve -> first-class principles** | Section 7 |
 | Identity / naming | **Improve -> engineering name + codename per subsystem** | Section 8; product name TBD |
+| Distribution / installability | **New -> SC-11 + capability degradation** | `2026-06-08-distribution-design.md`; KVM is the real "any Linux" gate |
 
 ---
 
