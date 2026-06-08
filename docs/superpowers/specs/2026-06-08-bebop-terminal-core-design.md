@@ -126,6 +126,41 @@ count**. Rejected: per-terminal device (the spike measured ~100MB PSS *per* devi
 The `bebop run` dev binary is a thin self-driving wrapper around one passive
 Terminal.
 
+### 3.1 Flood and resource-exhaustion resistance (security-relevant)
+
+Our adversary is a compromised agent (foundation §2). A cage dumping a gigabyte of
+stdout through the PTY relay to OOM or hang the *trusted host* is in scope, so
+floods are treated as a potential **DoS, not just a performance edge case.** Every
+unbounded buffer on the data path is a hard cap:
+
+- **Reader -> parser backpressure (bounded channel).** The off-thread blocking
+  reader hands bytes to the UI thread through a **bounded** channel (a
+  `sync_channel(N)` / fixed ring of recycled ~64 KB buffers), *not* an unbounded
+  queue. When the channel is full the reader blocks -> it stops draining the PTY ->
+  the PTY kernel buffer fills -> the writer's `write()` blocks -> the OS throttles
+  the source. Memory is bounded to `N x chunk` (target ~1-4 MB ceiling). This
+  deliberately restores the backpressure an inline read+parse loop (alacritty) gets
+  for free and that our read/parse split would otherwise lose. The two limits are
+  **orthogonal knobs**: the channel bound caps *memory*; the UI-thread bounded
+  drain (~2-4 ms/wake) caps *input starvation*.
+- **Command-block (OSC 133) metadata is bounded by scrollback.** Marks are advisory
+  (§5) but still a memory vector — a script can spam zero-length marked commands.
+  Block metadata is tied to the scrollback buffer: when a block's anchor scrolls out
+  of scrollback it is culled, plus a hard cap on tracked blocks. Mark memory can
+  never exceed a function of the (already bounded) scrollback size.
+- **Resize applied at feed-batch boundaries.** A resize reflows the grid and sends
+  TIOCSWINSZ to the PTY; both are driven by `Terminal::resize` and applied *between*
+  feed batches, never mid-parse, so line wrapping cannot tear while a flood is in
+  flight.
+- **Shared-device loss is a conscious tradeoff, caught by the CPU fallback.** One
+  wgpu device shared across panes (for RSS) means a true device *loss* (driver crash
+  / TDR / GPU OOM — rare) is device-wide: all panes fall to the CPU backend at once
+  (§8). A merely malformed render call does *not* cause this — wgpu validates
+  commands. The CPU path must stay fast enough to absorb that thundering herd; the
+  shape cache survives the transition *by construction* (it lives in the shared text
+  engine above the backend seam), and re-rasterization can be staggered across frames
+  if needed.
+
 ---
 
 ## 4. Render layer
@@ -181,7 +216,9 @@ way: prewarm (NAVI) for the common case.
   reflow, exposed through the seam as iterable **command-blocks** (command text,
   output range, exit code, timestamps). This is what makes command/output
   addressable for humans (jump-to-prompt, copy-last-output) and, later, for the
-  operator agent — without changing the flat-grid render model.
+  operator agent — without changing the flat-grid render model. Block metadata is
+  **bounded by scrollback** (culled when an anchor scrolls out, plus a hard cap on
+  tracked blocks) so mark-spam cannot exhaust memory — see §3.1.
 
 **Marks are advisory, never a security boundary (HARD CONSTRAINT).** OSC 133 marks
 are ordinary escape sequences in the PTY stream — any program in the terminal can
@@ -259,7 +296,11 @@ pub trait Renderer {
 
 pub struct RenderTarget<'a> { /* surface handle + viewport rect (pane region) */ }
 
-pub enum Notice { Info(String), Warn(String), Error { msg: String, action: Option<String> } }
+pub enum Severity { Info, Warn, Error }
+// Machine-readable code + action id so NAVI can render a button, not parse strings.
+pub enum NoticeCode { GpuFallback, ConfigRejected, ChildExited(i32), DeviceLost, /* ... */ }
+pub enum NoticeAction { RestartPane, ReloadConfig, Dismiss, /* ... */ }
+pub struct Notice { sev: Severity, code: NoticeCode, msg: Cow<'static, str>, action: Option<NoticeAction> }
 
 // terminal-core: the handle NAVI drives
 impl Terminal {
@@ -330,6 +371,10 @@ host), zero privilege — it cannot itself become an attack surface. Typed error
 - **Degradation** — force GPU-init failure -> assert CPU fallback + warning notice;
   kill the child -> assert visible closed state; feed bad config -> assert
   last-good retained + notice.
+- **Flood / resource-exhaustion (§3.1)** — stream a multi-GB source (`/dev/urandom`)
+  and assert steady-state RSS stays flat (bounded channel works, no balloon); spam
+  zero-length OSC 133 marks and assert block-metadata stays bounded; resize during a
+  flood and assert no line-wrap tearing.
 - **Performance regression gate** — reuse the spike's instrumentation
   (input->present probe, RSS/PSS sampler, throughput/jitter) as an automated bench
   asserting the §2 revised budgets, so latency/RSS/throughput cannot silently

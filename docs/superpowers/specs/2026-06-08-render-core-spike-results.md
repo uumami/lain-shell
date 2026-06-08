@@ -32,7 +32,7 @@ lot) — compile time, not a measured number.
 |---|-----------|--------|-----------------|-----------------|---------|
 | 1 | Cold start -> first prompt | < 100 ms | first frame **471 ms** med (410–526); first prompt 492 ms (sh) | **550–660 ms** | **MISS** target; **beats** kitty |
 | 2 | Input->glyph latency | ~1 frame of yardstick | **23 ms** med pipeline (Immediate); **50 ms** med with vsync (Fifo) | not in-process measurable | **HOLDS** (~1 frame pipeline) |
-| 3 | Throughput under load | competitive w/ kitty | **20.2 MiB/s** headless parse; ~13 MiB/s GPU path | **~9 MiB/s** | **HOLDS** (beats kitty) |
+| 3 | Throughput under load | competitive w/ kitty | **~14.4 MiB/s** sustained (bounded, flat RSS); 20.2 was unbounded/batch-amortized | **~9 MiB/s** | **HOLDS** (beats kitty) |
 | 4 | RSS — headless | < 15 MB | **RSS 5.2 MB / PSS 3.1 MB** | n/a | **HOLDS** (3x margin) |
 | 4 | RSS — GPU | < 80 MB | **RSS 141 MB / PSS 106 MB** (trimmed) | RSS 109 MB / PSS 62 MB | **MISS** (~1.7x kitty; floor is wgpu) |
 | 5 | GPUI desk-assessment | verdict | raw wgpu+glyphon preferred | — | see below |
@@ -96,6 +96,21 @@ head-to-head — but a ~1-frame pipeline is the target.
 We are competitive-to-better. `cat`-ing 5 MiB completes in ~0.25 s — fine UX.
 The naive byte-at-a-time path was *not* the bottleneck; `Shaping::Advanced` was
 (see Gotchas).
+
+**Correction (bounded-channel re-measurement).** The original spike used an
+*unbounded* reader->parser channel, so the 20.2 MiB/s above is an over-optimistic
+*batch-amortized* figure (the reader dumps the whole file into the queue, the loop
+drains it in a few big batches, amortizing the per-iteration test-harness overhead).
+After switching to a **bounded** `sync_channel(64)` (the shipping shape; see the
+BEBOP design §3.1):
+- **Memory stays flat under sustained flood:** `cat /dev/urandom` for 3 s processed
+  ~49 MB with **peak RSS 18 MB / PSS 15 MB** — the unbounded version would have
+  ballooned to GBs. This is the result that matters.
+- **Honest sustained throughput ~14.4 MiB/s** on worst-case *random* input (max
+  parser state-churn), with flat memory. Still comfortably above kitty's ~9 MiB/s,
+  so the gate (throughput HOLDS) is unchanged — but the real flow-controlled number
+  is ~14, not 20. (A flood treated as a DoS, not just a perf case, is in our threat
+  model — a compromised agent in a cage dumping stdout at the trusted host.)
 
 ### (4) RSS — headless HOLDS big, GPU MISSES (the one material concern)
 
