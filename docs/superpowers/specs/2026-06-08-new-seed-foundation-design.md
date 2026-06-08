@@ -163,7 +163,7 @@ internal architecture (and as identity).
 
 **Process map — three kinds of process:**
 
-1. **Host process** — the `lain-shell` binary (the **BEBOP** vessel). *Trusted.* Holds
+1. **Host process** — the `lain-shell` binary (codename **LAIN**). *Trusted.* Holds
    terminal-core, session-mux, the isolation manager, the boundary, and the optional operator.
    One process by default.
 2. **Guardian process** — `guardian` (**MOTOKO**), *separate and more-privileged.* Sole writer
@@ -295,7 +295,7 @@ codename into the public API.
 | Subsystem (what it does) | Engineering name | Codename | Source / rationale |
 |---|---|---|---|
 | Platform / product | `lain-shell` *(name TBD)* | **LAIN** | SEL — pervasive presence; "present day, present time" |
-| Terminal core: PTY, VTE, renderer, config, CLI | `terminal-core` (`core`) | **BEBOP** | Cowboy Bebop — the home vessel that carries the whole crew; the host body everything runs in |
+| Terminal core: PTY, VTE, renderer, config, CLI | `terminal-core` (`core`) | **BEBOP** | Cowboy Bebop — the ship's body/engine; the core that makes the terminal real, that NAVI and the rest are built around. (The whole product/host is **LAIN**, not BEBOP.) |
 | Multiplexer + user-facing surface: sessions/tabs/panes/layout | `session-mux` (`mux`) | **NAVI** | SEL — Lain's personal machine; the interface you touch |
 | Isolation manager: cage lifecycle, the dials/presets engine | `isolation` | **GEOFRONT** | Eva — the sealed buried sphere that contains NERV HQ and the cages |
 | A single sandbox/cage | `cage` | **EVA** | Eva — units kept in cages inside the Geofront, contained the instant they go berserk; cages number as EVA-01, EVA-02... |

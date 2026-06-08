@@ -5,6 +5,13 @@
 > render-core spike's validated learnings into a real architecture for the single
 > terminal primitive.
 >
+> **Naming (locked):** **BEBOP** is the codename for the `terminal-core` *module* —
+> one of five modules inside the trusted host binary `lain-shell` (codename
+> **LAIN**). BEBOP is the terminal core (PTY/VTE/render/config/CLI), **not** the
+> whole product. The whole terminal/product is **LAIN**; the user-facing surface
+> (panes/tabs/layout) is **NAVI**. The engineering name `terminal-core` (`core`) is
+> the load-bearing identifier in code; BEBOP is flavor for docs/UI.
+>
 > Inputs that bound this design:
 > - Foundation contract: `2026-06-08-new-seed-foundation-design.md` (BEBOP = PTY +
 >   VTE + renderer + config + CLI, in the trusted host process; SC-5, SC-6, SC-8,
