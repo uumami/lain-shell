@@ -13,3 +13,4 @@ portable-pty = "0.8"
 # this minimal graph nothing else enables it via feature unification, so the
 # build fails without this. (The spike's wgpu/winit deps enabled it incidentally.)
 rustix = { version = "0.38", features = ["std"] }
+cosmic-text = "0.12"

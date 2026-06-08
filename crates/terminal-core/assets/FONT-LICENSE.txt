@@ -1,0 +1,5 @@
+DejaVu Sans Mono — provisional bundled monospace font for BEBOP.
+License: Bitstream Vera Fonts Copyright + Arev Fonts Copyright (permissive,
+redistributable; see https://dejavu-fonts.github.io/License.html).
+Provisional per BEBOP design open item: bundled font choice (license + glyph
+coverage) is finalized at implementation; swap here if a different font is chosen.
