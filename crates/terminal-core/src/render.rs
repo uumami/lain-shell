@@ -15,7 +15,7 @@ pub struct PixelBuffer {
 
 impl PixelBuffer {
     fn filled(width: u32, height: u32, color: u32) -> Self {
-        PixelBuffer { width, height, data: vec![color; (width * height) as usize] }
+        PixelBuffer { width, height, data: vec![color; width as usize * height as usize] }
     }
     /// Pixel at (x, y); panics if out of range (test helper / internal use).
     pub fn at(&self, x: u32, y: u32) -> u32 {
@@ -144,15 +144,20 @@ mod tests {
     }
 
     #[test]
-    fn glyph_paints_pixels_in_its_cell_only() {
+    fn glyph_paints_and_blank_rows_stay_background() {
         let mut r = CpuRenderer::new(14.0);
-        // 'X' in the top-left cell; everything else blank.
+        // 'X' in the top-left cell; rows 1 and 2 are entirely blank.
         let grid = snapshot(10, 3, &[(0, 'X')]);
         let pb = r.render(&grid);
         // Some non-bg pixels exist (the glyph painted).
         assert!(pb.data.iter().any(|&p| p != 0x0d0d0f), "glyph should paint pixels");
-        // The bottom-right pixel (far from the glyph) stays background.
-        assert_eq!(pb.at(pb.width - 1, pb.height - 1), 0x0d0d0f);
+        // The entire bottom (blank) row band must remain background — verifies the
+        // glyph did not bleed out of its row.
+        let band_start = 2 * r.cell_h * pb.width;
+        assert!(
+            pb.data[band_start as usize..].iter().all(|&p| p == 0x0d0d0f),
+            "blank bottom row must stay background"
+        );
     }
 
     #[test]
