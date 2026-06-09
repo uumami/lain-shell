@@ -27,6 +27,37 @@ pub trait Renderer {
     fn render(&mut self, grid: &GridSnapshot) -> PixelBuffer;
 }
 
+/// Monospace cell metrics derived from the font size: the `cosmic-text` line
+/// metrics plus integer cell width/height. Both render backends use this so they
+/// lay out glyphs on the same grid (design §4 shared text engine).
+pub(crate) fn cell_metrics(font_size: f32) -> (Metrics, u32, u32) {
+    let line_height = (font_size * 1.2).ceil();
+    (
+        Metrics::new(font_size, line_height),
+        (font_size * 0.6).ceil() as u32,
+        line_height as u32,
+    )
+}
+
+/// Integer (cell_w, cell_h) for the given font size — for sizing windows/grids.
+pub fn cell_size(font_size: f32) -> (u32, u32) {
+    let (_, w, h) = cell_metrics(font_size);
+    (w, h)
+}
+
+/// Flatten the visible grid into newline-separated monospace rows. Shared by both
+/// backends so the text fed to `cosmic-text` is byte-identical across them.
+pub(crate) fn grid_to_text(grid: &GridSnapshot) -> String {
+    let mut text = String::with_capacity(grid.cells.len() + grid.lines);
+    for l in 0..grid.lines {
+        for c in 0..grid.cols {
+            text.push(grid.cells[l * grid.cols + c]);
+        }
+        text.push('\n');
+    }
+    text
+}
+
 pub struct CpuRenderer {
     font_system: FontSystem,
     swash: SwashCache,
@@ -52,13 +83,13 @@ impl CpuRenderer {
         db.set_serif_family(fam);
         let font_system = FontSystem::new_with_locale_and_db("en-US".into(), db);
 
-        let line_height = (font_size * 1.2).ceil();
+        let (metrics, cell_w, cell_h) = cell_metrics(font_size);
         CpuRenderer {
             font_system,
             swash: SwashCache::new(),
-            metrics: Metrics::new(font_size, line_height),
-            cell_w: (font_size * 0.6).ceil() as u32,
-            cell_h: line_height as u32,
+            metrics,
+            cell_w,
+            cell_h,
             fg: Color::rgb(220, 220, 220),
             bg: 0x0d0d0f,
         }
@@ -77,14 +108,7 @@ impl Renderer for CpuRenderer {
         let (width, height) = self.canvas_size(grid);
         let mut pb = PixelBuffer::filled(width, height, self.bg);
 
-        // Build the visible grid as monospace text (one row per line).
-        let mut text = String::with_capacity(grid.cells.len() + grid.lines);
-        for l in 0..grid.lines {
-            for c in 0..grid.cols {
-                text.push(grid.cells[l * grid.cols + c]);
-            }
-            text.push('\n');
-        }
+        let text = grid_to_text(grid);
 
         let mut buffer = Buffer::new(&mut self.font_system, self.metrics);
         buffer.set_size(&mut self.font_system, Some(width as f32), Some(height as f32));
