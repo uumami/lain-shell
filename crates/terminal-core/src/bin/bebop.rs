@@ -1,8 +1,9 @@
 //! `bebop run` -- dev binary: one window running $SHELL through the BEBOP core.
 //! Reactive (ControlFlow::Wait), woken by PTY bytes via EventLoopProxy. Exercises
 //! the GPU (wgpu+glyphon -> surface) and CPU (softbuffer) present paths in the
-//! real crate. Input encoding is spike-grade -- a later plan replaces it. Not the
-//! NAVI host; just a test vehicle until NAVI exists.
+//! real crate. Input goes through the neutral KeyInput/Terminal::on_input seam
+//! (xterm key encoding); action bindings (copy/paste/scroll) are a later plan.
+//! Not the NAVI host; just a test vehicle until NAVI exists.
 //!
 //! Usage: bebop run [--cpu] [--smoke]
 
