@@ -159,11 +159,15 @@ impl GpuRenderer {
                     view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        // Matches the CPU backend's 0x0d0d0f background intent.
+                        // Clear to the CPU backend's 0x0d0d0f background. The target is an
+                        // sRGB format, so wgpu sRGB-encodes the (linear) clear value on write;
+                        // these are the linear pre-images of sRGB bytes 13,13,15, chosen so
+                        // the stored pixels read back as ~0x0d0d0f (verified by the offscreen
+                        // readback test).
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 13.0 / 255.0,
-                            g: 13.0 / 255.0,
-                            b: 15.0 / 255.0,
+                            r: 0.004025,
+                            g: 0.004025,
+                            b: 0.004777,
                             a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
