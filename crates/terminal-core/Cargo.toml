@@ -24,6 +24,6 @@ winit = "0.30"
 softbuffer = "0.4"
 pollster = "0.3"
 
-[[bin]]
-name = "bebop"
-path = "src/bin/bebop.rs"
+# The `bebop` dev binary (src/bin/bebop.rs, created in Plan 3 Task 7) is
+# auto-discovered by cargo -- no explicit [[bin]] stanza, which would otherwise
+# error on the missing source file before that task runs.
