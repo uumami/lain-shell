@@ -11,13 +11,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use lain_types::ByteStream;
-use terminal_core::{cell_size, CpuRenderer, GpuRenderer, LocalPty, ReaderPump, Renderer, Terminal};
+use terminal_core::{
+    cell_size, CpuRenderer, GpuRenderer, InputOutcome, Key, KeyInput, LocalPty, Modifiers, NamedKey,
+    ReaderPump, Renderer, Terminal,
+};
 
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
-use winit::keyboard::{Key, NamedKey};
+use winit::event::Modifiers as WinitModifiers;
+use winit::keyboard::{Key as WinitKey, NamedKey as WinitNamed};
 use winit::window::{Window, WindowId};
 
 const FONT_SIZE: f32 = 14.0;
@@ -55,6 +59,7 @@ struct App {
     cell_w: u32,
     cell_h: u32,
     done: bool,
+    mods: WinitModifiers,
 }
 
 impl ApplicationHandler<UserEvent> for App {
@@ -181,18 +186,35 @@ impl ApplicationHandler<UserEvent> for App {
                 }
             }
             WindowEvent::RedrawRequested => self.draw(),
+            WindowEvent::ModifiersChanged(m) => {
+                self.mods = m;
+            }
             WindowEvent::KeyboardInput { event, .. } if event.state.is_pressed() => {
-                let bytes: Vec<u8> = match event.logical_key {
-                    Key::Named(NamedKey::Enter) => vec![b'\r'],
-                    Key::Named(NamedKey::Backspace) => vec![0x7f],
-                    Key::Named(NamedKey::Tab) => vec![b'\t'],
-                    Key::Named(NamedKey::Space) => vec![b' '],
-                    Key::Character(s) => s.as_bytes().to_vec(),
-                    _ => Vec::new(),
+                let key = match &event.logical_key {
+                    // Space arrives as a named key but is a printable char to the PTY.
+                    WinitKey::Named(WinitNamed::Space) => Some(Key::Char(' ')),
+                    WinitKey::Named(n) => translate_named(*n).map(Key::Named),
+                    WinitKey::Character(s) => s.chars().next().map(Key::Char),
+                    _ => None,
                 };
-                if !bytes.is_empty() {
-                    if let Some(p) = self.pty.as_mut() {
-                        let _ = p.write(&bytes);
+                if let Some(key) = key {
+                    let st = self.mods.state();
+                    let ki = KeyInput {
+                        key,
+                        mods: Modifiers {
+                            shift: st.shift_key(),
+                            alt: st.alt_key(),
+                            ctrl: st.control_key(),
+                            logo: st.super_key(),
+                        },
+                    };
+                    if let Some(t) = self.term.as_ref() {
+                        let outcome = t.on_input(&ki);
+                        if let InputOutcome::Bytes(bytes) = outcome {
+                            if let Some(p) = self.pty.as_mut() {
+                                let _ = p.write(&bytes);
+                            }
+                        }
                     }
                 }
             }
@@ -282,6 +304,40 @@ impl App {
     }
 }
 
+/// Map the subset of winit named keys this cycle encodes into the neutral
+/// `NamedKey`. Unmapped keys return `None` (the press is ignored for now).
+fn translate_named(n: WinitNamed) -> Option<NamedKey> {
+    Some(match n {
+        WinitNamed::Enter => NamedKey::Enter,
+        WinitNamed::Tab => NamedKey::Tab,
+        WinitNamed::Backspace => NamedKey::Backspace,
+        WinitNamed::Escape => NamedKey::Escape,
+        WinitNamed::ArrowUp => NamedKey::Up,
+        WinitNamed::ArrowDown => NamedKey::Down,
+        WinitNamed::ArrowLeft => NamedKey::Left,
+        WinitNamed::ArrowRight => NamedKey::Right,
+        WinitNamed::Home => NamedKey::Home,
+        WinitNamed::End => NamedKey::End,
+        WinitNamed::PageUp => NamedKey::PageUp,
+        WinitNamed::PageDown => NamedKey::PageDown,
+        WinitNamed::Insert => NamedKey::Insert,
+        WinitNamed::Delete => NamedKey::Delete,
+        WinitNamed::F1 => NamedKey::F(1),
+        WinitNamed::F2 => NamedKey::F(2),
+        WinitNamed::F3 => NamedKey::F(3),
+        WinitNamed::F4 => NamedKey::F(4),
+        WinitNamed::F5 => NamedKey::F(5),
+        WinitNamed::F6 => NamedKey::F(6),
+        WinitNamed::F7 => NamedKey::F(7),
+        WinitNamed::F8 => NamedKey::F(8),
+        WinitNamed::F9 => NamedKey::F(9),
+        WinitNamed::F10 => NamedKey::F(10),
+        WinitNamed::F11 => NamedKey::F(11),
+        WinitNamed::F12 => NamedKey::F(12),
+        _ => return None,
+    })
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(|s| s.as_str()) != Some("run") {
@@ -319,6 +375,7 @@ fn main() {
         cell_w: 1,
         cell_h: 1,
         done: false,
+        mods: WinitModifiers::default(),
     };
     el.run_app(&mut app).expect("run app");
 }
