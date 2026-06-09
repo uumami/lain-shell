@@ -45,6 +45,8 @@ pub struct Terminal {
     parser: Processor,
     writes: Arc<Mutex<Vec<u8>>>,
     dims: Dims,
+    notices: Vec<lain_types::Notice>,
+    status: lain_types::TermStatus,
 }
 
 impl Terminal {
@@ -52,7 +54,14 @@ impl Terminal {
         let dims = Dims { cols: cols.max(1), lines: lines.max(1) };
         let writes = Arc::new(Mutex::new(Vec::new()));
         let term = Term::new(Config::default(), &dims, EventProxy(writes.clone()));
-        Terminal { term, parser: Processor::new(), writes, dims }
+        Terminal {
+            term,
+            parser: Processor::new(),
+            writes,
+            dims,
+            notices: Vec::new(),
+            status: lain_types::TermStatus::Running,
+        }
     }
 
     /// Advance the parser with PTY bytes. Returns conservative damage.
@@ -75,6 +84,22 @@ impl Terminal {
     /// Bytes alacritty wants written back to the PTY (replies). Drains them.
     pub fn take_pty_writes(&mut self) -> Vec<u8> {
         std::mem::take(&mut *self.writes.lock().unwrap())
+    }
+
+    pub fn push_notice(&mut self, notice: lain_types::Notice) {
+        self.notices.push(notice);
+    }
+
+    pub fn notices(&mut self) -> impl Iterator<Item = lain_types::Notice> {
+        std::mem::take(&mut self.notices).into_iter()
+    }
+
+    pub fn status(&self) -> lain_types::TermStatus {
+        self.status.clone()
+    }
+
+    pub fn set_status(&mut self, status: lain_types::TermStatus) {
+        self.status = status;
     }
 
     /// Encode a key press for the PTY, honoring this terminal's live modes
@@ -191,5 +216,31 @@ mod tests {
             mods: lain_types::Modifiers::default(),
         };
         assert_eq!(t.on_input(&f20), lain_types::InputOutcome::Unhandled);
+    }
+
+    #[test]
+    fn notices_drain_and_status_is_reported() {
+        let mut t = Terminal::new(20, 5);
+        assert_eq!(t.status(), lain_types::TermStatus::Running);
+        t.push_notice(lain_types::Notice {
+            severity: lain_types::Severity::Warn,
+            code: lain_types::NoticeCode::ConfigRejected,
+            message: "bad config".to_string(),
+            action: Some(lain_types::NoticeAction::ReloadConfig),
+        });
+        let notices: Vec<_> = t.notices().collect();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].code, lain_types::NoticeCode::ConfigRejected);
+        assert_eq!(t.notices().count(), 0);
+
+        t.set_status(lain_types::TermStatus::Degraded {
+            reason: lain_types::DegradedReason::GpuUnavailable,
+        });
+        assert_eq!(
+            t.status(),
+            lain_types::TermStatus::Degraded {
+                reason: lain_types::DegradedReason::GpuUnavailable,
+            }
+        );
     }
 }
