@@ -16,6 +16,58 @@ pub struct Cursor {
     pub col: usize,
 }
 
+/// Keyboard modifier state, backend-neutral. `logo` = Super/Command/Windows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Modifiers {
+    pub shift: bool,
+    pub alt: bool,
+    pub ctrl: bool,
+    pub logo: bool,
+}
+
+/// A functional (non-text) key. `F(n)` is a function key (F1..F12 used now).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NamedKey {
+    Enter,
+    Tab,
+    Backspace,
+    Escape,
+    Up,
+    Down,
+    Left,
+    Right,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Insert,
+    Delete,
+    F(u8),
+}
+
+/// A key press, backend-neutral: either a produced character (post-shift, e.g.
+/// '!' for Shift+1) or a functional key. The host translates its native key
+/// events (winit, etc.) into this; `terminal-core` never sees a toolkit type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Key {
+    Char(char),
+    Named(NamedKey),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyInput {
+    pub key: Key,
+    pub mods: Modifiers,
+}
+
+/// Result of feeding a key press to a terminal: bytes to write to the PTY, or
+/// unhandled (the host may bind it to an action -- a future `Action(..)` variant).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InputOutcome {
+    Bytes(Vec<u8>),
+    Unhandled,
+}
+
 /// A flat, render-agnostic view of the visible grid. Chars only in Plan 1;
 /// color/attrs arrive with the render plan.
 #[derive(Debug, Clone, PartialEq)]
@@ -90,5 +142,23 @@ mod tests {
     fn damage_full_is_not_empty() {
         let d = Damage::full();
         assert!(d.full);
+    }
+
+    #[test]
+    fn key_input_constructs_and_compares() {
+        let a = KeyInput {
+            key: Key::Named(NamedKey::Up),
+            mods: Modifiers { ctrl: true, ..Modifiers::default() },
+        };
+        let b = KeyInput {
+            key: Key::Named(NamedKey::Up),
+            mods: Modifiers { ctrl: true, ..Modifiers::default() },
+        };
+        assert_eq!(a, b);
+        assert!(a.mods.ctrl && !a.mods.alt);
+        assert_eq!(Key::Char('x'), Key::Char('x'));
+        assert_eq!(NamedKey::F(5), NamedKey::F(5));
+        assert_eq!(InputOutcome::Bytes(vec![0x1b]), InputOutcome::Bytes(vec![0x1b]));
+        assert_ne!(InputOutcome::Bytes(vec![0x1b]), InputOutcome::Unhandled);
     }
 }
