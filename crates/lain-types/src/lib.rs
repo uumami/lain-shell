@@ -68,6 +68,51 @@ pub enum InputOutcome {
     Unhandled,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Severity {
+    Info,
+    Warn,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoticeCode {
+    GpuFallback,
+    ConfigRejected,
+    ChildExited(i32),
+    DeviceLost,
+    FontFallback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoticeAction {
+    RestartPane,
+    ReloadConfig,
+    Dismiss,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice {
+    pub severity: Severity,
+    pub code: NoticeCode,
+    pub message: String,
+    pub action: Option<NoticeAction>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DegradedReason {
+    GpuUnavailable,
+    DeviceLost,
+    FontFallback,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TermStatus {
+    Running,
+    Closed { code: Option<i32> },
+    Degraded { reason: DegradedReason },
+}
+
 /// A flat, render-agnostic view of the visible grid. Chars only in Plan 1;
 /// color/attrs arrive with the render plan.
 #[derive(Debug, Clone, PartialEq)]
@@ -160,5 +205,24 @@ mod tests {
         assert_eq!(NamedKey::F(5), NamedKey::F(5));
         assert_eq!(InputOutcome::Bytes(vec![0x1b]), InputOutcome::Bytes(vec![0x1b]));
         assert_ne!(InputOutcome::Bytes(vec![0x1b]), InputOutcome::Unhandled);
+    }
+
+    #[test]
+    fn notice_and_status_construct_and_compare() {
+        let notice = Notice {
+            severity: Severity::Warn,
+            code: NoticeCode::GpuFallback,
+            message: "running on CPU renderer".to_string(),
+            action: Some(NoticeAction::Dismiss),
+        };
+        assert_eq!(notice.severity, Severity::Warn);
+        assert_eq!(notice.code, NoticeCode::GpuFallback);
+        assert_eq!(notice.action, Some(NoticeAction::Dismiss));
+        assert_eq!(TermStatus::Running, TermStatus::Running);
+        assert_eq!(
+            TermStatus::Degraded { reason: DegradedReason::GpuUnavailable },
+            TermStatus::Degraded { reason: DegradedReason::GpuUnavailable }
+        );
+        assert_ne!(TermStatus::Closed { code: Some(1) }, TermStatus::Running);
     }
 }
