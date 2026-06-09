@@ -17,7 +17,18 @@ pub struct ReaderPump {
 impl ReaderPump {
     /// `bound` = max queued chunks; `chunk` = read buffer size. Memory ceiling
     /// is ~`bound * chunk`.
-    pub fn start(mut reader: Box<dyn Read + Send>, bound: usize, chunk: usize) -> Self {
+    pub fn start(reader: Box<dyn Read + Send>, bound: usize, chunk: usize) -> Self {
+        Self::start_with_waker(reader, bound, chunk, || {})
+    }
+
+    /// Like [`start`], but calls `waker` after each chunk is enqueued — used to
+    /// wake a reactive event loop (`winit` `EventLoopProxy`) so it drains+renders.
+    pub fn start_with_waker(
+        mut reader: Box<dyn Read + Send>,
+        bound: usize,
+        chunk: usize,
+        waker: impl Fn() + Send + 'static,
+    ) -> Self {
         let (tx, rx) = sync_channel::<Vec<u8>>(bound);
         let produced = Arc::new(AtomicUsize::new(0));
         let produced_t = produced.clone();
@@ -31,6 +42,7 @@ impl ReaderPump {
                             break; // consumer dropped
                         }
                         produced_t.fetch_add(1, Ordering::Relaxed);
+                        waker();
                     }
                 }
             }
@@ -82,5 +94,19 @@ mod tests {
         let pump = ReaderPump::start(reader, 8, 3);
         std::thread::sleep(Duration::from_millis(50));
         assert_eq!(pump.drain(), b"abcdef");
+    }
+
+    #[test]
+    fn waker_fires_for_enqueued_chunks() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let c = calls.clone();
+        let reader = Box::new(std::io::Cursor::new(b"abcdef".to_vec()));
+        let pump = ReaderPump::start_with_waker(reader, 8, 3, move || {
+            c.fetch_add(1, Ordering::Relaxed);
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        let _ = pump.drain();
+        assert!(calls.load(Ordering::Relaxed) >= 1, "waker should fire at least once");
     }
 }
