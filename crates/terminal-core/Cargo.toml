@@ -14,3 +14,16 @@ portable-pty = "0.8"
 # build fails without this. (The spike's wgpu/winit deps enabled it incidentally.)
 rustix = { version = "0.38", features = ["std"] }
 cosmic-text = "0.12"
+
+# GPU backend: glyphon 0.6 pins wgpu 22 and re-exports cosmic-text 0.12 (the same
+# version this crate already depends on), so the text-layout type is shared, not
+# duplicated. winit 0.30 + wgpu 22 + softbuffer 0.4 all share raw-window-handle 0.6.
+wgpu = "22"
+glyphon = "0.6"
+winit = "0.30"
+softbuffer = "0.4"
+pollster = "0.3"
+
+[[bin]]
+name = "bebop"
+path = "src/bin/bebop.rs"
