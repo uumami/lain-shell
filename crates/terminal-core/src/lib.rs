@@ -7,7 +7,9 @@ mod render;
 mod render_gpu;
 mod terminal;
 
-pub use lain_types::{ByteStream, Cursor, Damage, GridSnapshot};
+pub use lain_types::{
+    ByteStream, Cursor, Damage, GridSnapshot, InputOutcome, Key, KeyInput, Modifiers, NamedKey,
+};
 pub use pty::LocalPty;
 pub use pump::ReaderPump;
 pub use render::{cell_size, CpuRenderer, PixelBuffer, Renderer};

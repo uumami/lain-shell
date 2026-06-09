@@ -3,7 +3,7 @@
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line};
-use alacritty_terminal::term::{Config, Term};
+use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::vte::ansi::Processor;
 use lain_types::{Cursor, Damage, GridSnapshot};
 use std::sync::{Arc, Mutex};
@@ -75,6 +75,17 @@ impl Terminal {
     /// Bytes alacritty wants written back to the PTY (replies). Drains them.
     pub fn take_pty_writes(&mut self) -> Vec<u8> {
         std::mem::take(&mut *self.writes.lock().unwrap())
+    }
+
+    /// Encode a key press for the PTY, honoring this terminal's live modes
+    /// (application cursor keys / DECCKM). Returns `Unhandled` for keys this
+    /// layer does not encode (the host may bind them to actions later).
+    pub fn on_input(&self, input: &lain_types::KeyInput) -> lain_types::InputOutcome {
+        let app_cursor = self.term.mode().contains(TermMode::APP_CURSOR);
+        match crate::keys::encode(input, app_cursor) {
+            Some(bytes) => lain_types::InputOutcome::Bytes(bytes),
+            None => lain_types::InputOutcome::Unhandled,
+        }
     }
 
     pub fn snapshot(&self) -> GridSnapshot {
@@ -149,5 +160,36 @@ mod tests {
         let s = t.snapshot();
         assert_eq!(s.cols, 8);
         assert_eq!(s.row(0), "abcdef"); // now fits on one line
+    }
+
+    #[test]
+    fn on_input_encodes_arrow_in_normal_mode() {
+        let t = Terminal::new(20, 5);
+        let up = lain_types::KeyInput {
+            key: lain_types::Key::Named(lain_types::NamedKey::Up),
+            mods: lain_types::Modifiers::default(),
+        };
+        assert_eq!(t.on_input(&up), lain_types::InputOutcome::Bytes(b"\x1b[A".to_vec()));
+    }
+
+    #[test]
+    fn on_input_respects_application_cursor_mode() {
+        let mut t = Terminal::new(20, 5);
+        t.feed(b"\x1b[?1h"); // DECCKM set -> application cursor keys
+        let up = lain_types::KeyInput {
+            key: lain_types::Key::Named(lain_types::NamedKey::Up),
+            mods: lain_types::Modifiers::default(),
+        };
+        assert_eq!(t.on_input(&up), lain_types::InputOutcome::Bytes(b"\x1bOA".to_vec()));
+    }
+
+    #[test]
+    fn on_input_unhandled_for_unmapped_key() {
+        let t = Terminal::new(20, 5);
+        let f20 = lain_types::KeyInput {
+            key: lain_types::Key::Named(lain_types::NamedKey::F(20)),
+            mods: lain_types::Modifiers::default(),
+        };
+        assert_eq!(t.on_input(&f20), lain_types::InputOutcome::Unhandled);
     }
 }
