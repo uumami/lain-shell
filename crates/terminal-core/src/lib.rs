@@ -1,5 +1,6 @@
 //! terminal-core (codename BEBOP): single-terminal primitive.
 
+mod keys;
 mod pty;
 mod pump;
 mod render;
